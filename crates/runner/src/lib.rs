@@ -7,6 +7,10 @@ use std::process::Command;
 use tempfile::TempDir;
 use tracing::{debug, info, warn, error};
 
+// Docker-first approach for cross-platform consistency
+mod sandbox_docker;
+
+// Legacy OS-specific implementations as fallback
 #[cfg(target_os = "linux")]
 mod sandbox_linux;
 #[cfg(target_os = "macos")]
@@ -127,37 +131,62 @@ async fn execute_sandbox(context: RunContext) -> Result<ExecutionResult> {
         }).unwrap_or_default(),
     };
 
-    #[cfg(target_os = "linux")]
-    return sandbox_linux::execute_in_sandbox(context.command, sandbox_config).await;
+    // Docker-first approach: Try Docker, fallback to OS-specific
+    match sandbox_docker::execute_in_docker_sandbox(context.command.clone(), sandbox_config.clone()).await {
+        Ok(result) => {
+            info!("✅ Docker sandbox execution successful");
+            return Ok(result);
+        }
+        Err(e) => {
+            warn!("🐳 Docker unavailable, falling back to OS-specific sandbox: {}", e);
+            
+            // Fallback to OS-specific implementation
+            #[cfg(target_os = "linux")]
+            return sandbox_linux::execute_in_sandbox(context.command, sandbox_config).await;
 
-    #[cfg(target_os = "macos")]
-    return sandbox_macos::execute_in_sandbox(context.command, sandbox_config).await;
+            #[cfg(target_os = "macos")]
+            return sandbox_macos::execute_in_sandbox(context.command, sandbox_config).await;
 
-    #[cfg(target_os = "windows")]
-    return sandbox_windows::execute_in_sandbox(context.command, sandbox_config).await;
+            #[cfg(target_os = "windows")]
+            return sandbox_windows::execute_in_sandbox(context.command, sandbox_config).await;
+        }
+    }
 }
 
 async fn execute_dryrun(context: RunContext) -> Result<ExecutionResult> {
     info!("Dry-run mode - read-only sandbox with no network");
     
-    let mut sandbox_config = SandboxConfig {
+    let sandbox_config = SandboxConfig {
         network_mode: NetworkMode::None,
         fs_write_root: PathBuf::from("/tmp/sbx_dryrun"),
         secret_paths_deny: context.policy.default.secret_paths_deny.clone(),
-        resource_limits: ResourceLimits::default(),
+        resource_limits: ResourceLimits {
+            memory_mb: 256,  // Lower limits for dryrun
+            cpu_percent: 25,
+            processes: 8,
+        },
     };
 
-    // Force read-only mode
-    // Note: read-only enforcement handled by sandbox implementation
+    // Docker-first approach for dryrun as well
+    match sandbox_docker::execute_in_docker_sandbox(context.command.clone(), sandbox_config.clone()).await {
+        Ok(result) => {
+            info!("✅ Docker dryrun execution successful");
+            return Ok(result);
+        }
+        Err(e) => {
+            warn!("🐳 Docker unavailable for dryrun, falling back to OS-specific: {}", e);
+            
+            // Fallback to OS-specific implementation
+            #[cfg(target_os = "linux")]
+            return sandbox_linux::execute_in_sandbox(context.command, sandbox_config).await;
 
-    #[cfg(target_os = "linux")]
-    return sandbox_linux::execute_in_sandbox(context.command, sandbox_config).await;
+            #[cfg(target_os = "macos")]
+            return sandbox_macos::execute_in_sandbox(context.command, sandbox_config).await;
 
-    #[cfg(target_os = "macos")]
-    return sandbox_macos::execute_in_sandbox(context.command, sandbox_config).await;
-
-    #[cfg(target_os = "windows")]
-    return sandbox_windows::execute_in_sandbox(context.command, sandbox_config).await;
+            #[cfg(target_os = "windows")]
+            return sandbox_windows::execute_in_sandbox(context.command, sandbox_config).await;
+        }
+    }
 }
 
 #[derive(Debug, Clone)]
