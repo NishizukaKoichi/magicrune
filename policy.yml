@@ -1,0 +1,72 @@
+version: 1
+default:
+  external_code: enforce_sandbox       # ← 既定で強制
+  ai_pure_generated: allow_local       # ← 既定でローカル即実行（本番は署名要）
+  network_mode: none                   # ← 既定：通信遮断
+  package_test:
+    enable: true
+    egress_allowlist:
+      - "registry.npmjs.org:443"
+      - "pypi.org:443"
+      - "files.pythonhosted.org:443"
+      - "crates.io:443"
+      - "github.com:443"
+      - "raw.githubusercontent.com:443"
+    duration_sec: 30                   # 許可時間
+    dns_pin: true                      # DNSピン＋証明書検証
+  fs_write_root: "/tmp/sbx"
+  secret_paths_deny:
+    - "~/.ssh"
+    - "~/.aws"
+    - "~/.gnupg"
+    - "~/.config/*credentials*"
+    - "**/.env*"
+    - "**/secrets*"
+    - "**/private*"
+audit:
+  enable: true
+  path: "~/.magicrune/audit"
+  retention_days: 90
+  log_level: info
+ai_review:
+  enable: true
+  threshold:
+    green_auto_promote: true
+    yellow_require_human: true
+    red_block: true
+  risk_weights:
+    secret_access: 100
+    privilege_escalation: 100
+    known_malicious: 100
+    binary_execution: 50
+    network_external: 40
+    file_write_many: 30
+    obfuscation: 60
+signing:
+  trusted_keys_path: "~/.magicrune/trusted_keys"
+  require_signature_for_production: true
+  allowed_algorithms:
+    - "ssh-rsa"
+    - "ssh-ed25519"
+    - "gpg-rsa4096"
+  verification_mode: strict
+cache:
+  path: "~/.magicrune/cache"
+  max_size_mb: 1024
+  ttl_days: 30
+sandbox:
+  namespaces:
+    - pid
+    - net
+    - mnt
+    - user
+    - uts
+    - ipc
+  capabilities_drop: all
+  seccomp_profile: strict
+  resource_limits:
+    memory_mb: 512
+    cpu_percent: 50
+    disk_mb: 100
+    processes: 32
+    open_files: 256

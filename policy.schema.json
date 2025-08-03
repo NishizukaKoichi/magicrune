@@ -1,0 +1,161 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "MagicRune Policy Configuration",
+  "type": "object",
+  "required": ["version", "default", "audit", "ai_review", "signing"],
+  "properties": {
+    "version": {
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 1
+    },
+    "default": {
+      "type": "object",
+      "required": ["external_code", "ai_pure_generated", "network_mode"],
+      "properties": {
+        "external_code": {
+          "enum": ["enforce_sandbox"],
+          "description": "External code must always run in sandbox (cannot be changed)"
+        },
+        "ai_pure_generated": {
+          "enum": ["allow_local", "enforce_sandbox"],
+          "description": "AI-generated code without external dependencies"
+        },
+        "network_mode": {
+          "enum": ["none", "localhost", "full"],
+          "description": "Default network isolation mode"
+        },
+        "package_test": {
+          "type": "object",
+          "required": ["enable", "egress_allowlist", "duration_sec", "dns_pin"],
+          "properties": {
+            "enable": { "type": "boolean" },
+            "egress_allowlist": {
+              "type": "array",
+              "items": {
+                "type": "string",
+                "pattern": "^[a-zA-Z0-9.-]+:[0-9]+$"
+              }
+            },
+            "duration_sec": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 300
+            },
+            "dns_pin": { "type": "boolean" }
+          }
+        },
+        "fs_write_root": {
+          "type": "string",
+          "pattern": "^/tmp/[a-zA-Z0-9_-]+$"
+        },
+        "secret_paths_deny": {
+          "type": "array",
+          "items": { "type": "string" }
+        }
+      }
+    },
+    "audit": {
+      "type": "object",
+      "required": ["enable", "path"],
+      "properties": {
+        "enable": { "type": "boolean" },
+        "path": { "type": "string" },
+        "retention_days": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 365
+        },
+        "log_level": {
+          "enum": ["debug", "info", "warn", "error"]
+        }
+      }
+    },
+    "ai_review": {
+      "type": "object",
+      "required": ["enable", "threshold"],
+      "properties": {
+        "enable": { "type": "boolean" },
+        "threshold": {
+          "type": "object",
+          "required": ["green_auto_promote", "yellow_require_human", "red_block"],
+          "properties": {
+            "green_auto_promote": { "type": "boolean" },
+            "yellow_require_human": { "type": "boolean" },
+            "red_block": { "type": "boolean" }
+          }
+        },
+        "risk_weights": {
+          "type": "object",
+          "patternProperties": {
+            "^[a-z_]+$": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 100
+            }
+          }
+        }
+      }
+    },
+    "signing": {
+      "type": "object",
+      "required": ["trusted_keys_path", "require_signature_for_production"],
+      "properties": {
+        "trusted_keys_path": { "type": "string" },
+        "require_signature_for_production": { "type": "boolean" },
+        "allowed_algorithms": {
+          "type": "array",
+          "items": {
+            "enum": ["ssh-rsa", "ssh-ed25519", "gpg-rsa4096", "gpg-ed25519"]
+          }
+        },
+        "verification_mode": {
+          "enum": ["strict", "permissive"]
+        }
+      }
+    },
+    "cache": {
+      "type": "object",
+      "properties": {
+        "path": { "type": "string" },
+        "max_size_mb": {
+          "type": "integer",
+          "minimum": 100,
+          "maximum": 10240
+        },
+        "ttl_days": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 365
+        }
+      }
+    },
+    "sandbox": {
+      "type": "object",
+      "properties": {
+        "namespaces": {
+          "type": "array",
+          "items": {
+            "enum": ["pid", "net", "mnt", "user", "uts", "ipc", "cgroup"]
+          }
+        },
+        "capabilities_drop": {
+          "enum": ["all"]
+        },
+        "seccomp_profile": {
+          "enum": ["strict", "moderate", "custom"]
+        },
+        "resource_limits": {
+          "type": "object",
+          "properties": {
+            "memory_mb": { "type": "integer", "minimum": 32 },
+            "cpu_percent": { "type": "integer", "minimum": 1, "maximum": 100 },
+            "disk_mb": { "type": "integer", "minimum": 10 },
+            "processes": { "type": "integer", "minimum": 1 },
+            "open_files": { "type": "integer", "minimum": 16 }
+          }
+        }
+      }
+    }
+  }
+}

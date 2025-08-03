@@ -1,0 +1,20 @@
+[package]
+name = "magicrune-sign"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+license.workspace = true
+
+[dependencies]
+magicrune-policy = { path = "../policy" }
+anyhow.workspace = true
+tracing.workspace = true
+base64.workspace = true
+sha2.workspace = true
+ed25519-dalek = "2.1"
+rsa = "0.9"
+pgp = "0.10"
+ssh-key = "0.6"
+
+[dev-dependencies]
+tempfile = "3.8"

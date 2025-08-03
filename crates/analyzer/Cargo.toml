@@ -1,0 +1,16 @@
+[package]
+name = "magicrune-analyzer"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+license.workspace = true
+
+[dependencies]
+magicrune-audit = { path = "../audit" }
+serde.workspace = true
+serde_json.workspace = true
+anyhow.workspace = true
+tracing.workspace = true
+
+[dev-dependencies]
+tempfile = "3.8"

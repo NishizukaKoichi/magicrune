@@ -1,0 +1,38 @@
+[workspace]
+members = [
+    "crates/runner",
+    "crates/detector",
+    "crates/audit",
+    "crates/analyzer",
+    "crates/policy",
+    "crates/sign",
+    "crates/cli",
+    "crates/vscode-bridge",
+]
+resolver = "2"
+
+[workspace.package]
+version = "0.1.0"
+edition = "2021"
+authors = ["MagicRune Team"]
+license = "MIT"
+repository = "https://github.com/magicrune/magicrune"
+
+[workspace.dependencies]
+tokio = { version = "1.35", features = ["full"] }
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+serde_yaml = "0.9"
+clap = { version = "4.4", features = ["derive"] }
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter", "json"] }
+anyhow = "1.0"
+thiserror = "1.0"
+regex = "1.10"
+sha2 = "0.10"
+base64 = "0.21"
+chrono = { version = "0.4", features = ["serde"] }
+nix = { version = "0.27", features = ["mount", "sched", "process", "user"] }
+seccomp = "0.3"
+caps = "0.5"
+jsonschema = "0.17"

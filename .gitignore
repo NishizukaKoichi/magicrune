@@ -1,0 +1,42 @@
+# Rust
+target/
+Cargo.lock
+**/*.rs.bk
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Logs
+*.log
+audit-*.ndjson
+
+# Test artifacts
+*.tmp
+temp/
+tmp/
+
+# Build artifacts
+dist/
+build/
+out/
+
+# Coverage
+*.lcov
+coverage/
+
+# Environment
+.env
+.env.local
+.env.*.local
+
+# MagicRune specific
+~/.magicrune/
+magicrune-report.json
