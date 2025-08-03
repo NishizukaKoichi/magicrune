@@ -72,7 +72,7 @@ lazy_static! {
         Regex::new(r"\brm\s+-rf\s+/").unwrap(),
         Regex::new(r"\bdd\s+.*/dev/[^/]+").unwrap(),
         Regex::new(r"\bmkfs\.").unwrap(),
-        Regex::new(r":(){ :|:& };:").unwrap(), // Fork bomb
+        Regex::new(r":\(\)\{ :\|:& \};:").unwrap(), // Fork bomb
         Regex::new(r"\bsudo\s+chmod\s+777\s+/").unwrap(),
         Regex::new(r"\biptables\s+-F").unwrap(),
     ];
@@ -90,12 +90,33 @@ pub enum ExternalSourceType {
     DangerousOperation,
 }
 
+impl ExternalSourceType {
+    pub fn name(&self) -> &'static str {
+        match self {
+            ExternalSourceType::NetworkFetch => "Network Fetch",
+            ExternalSourceType::PipeExecution => "Pipe Execution", 
+            ExternalSourceType::PackageManager => "Package Manager",
+            ExternalSourceType::RemotePath => "Remote Path",
+            ExternalSourceType::ProjectEscape => "Project Escape",
+            ExternalSourceType::UnsignedBinary => "Unsigned Binary",
+            ExternalSourceType::SecretAccess => "Secret Access",
+            ExternalSourceType::DangerousOperation => "Dangerous Operation",
+        }
+    }
+}
+
 #[derive(Debug, Clone)]
 pub struct ExternalSourceDetection {
     pub source_type: ExternalSourceType,
     pub description: String,
     pub risk_level: RiskLevel,
     pub matched_pattern: String,
+}
+
+impl ExternalSourceDetection {
+    pub fn source_type_name(&self) -> &'static str {
+        self.source_type.name()
+    }
 }
 
 #[derive(Debug, Clone, PartialEq)]

@@ -3,7 +3,9 @@ use magicrune_policy::SigningConfig;
 use sha2::{Sha256, Digest};
 use std::fs;
 use std::path::Path;
-use tracing::{debug, info};
+use tracing::{debug, info, warn};
+use base64::{Engine as _, engine::general_purpose};
+use tempfile;
 
 pub fn verify_command_signature(
     command: &str,
@@ -40,9 +42,55 @@ fn verify_ssh_signature(
 ) -> Result<bool> {
     debug!("Verifying SSH signature");
     
-    // For now, return a placeholder
-    // TODO: Implement actual SSH signature verification using ssh-keygen -Y verify
-    Ok(false)
+    // Create temporary files for verification
+    let temp_dir = tempfile::tempdir()?;
+    let message_file = temp_dir.path().join("message.txt");
+    let signature_file = temp_dir.path().join("signature.sig");
+    let allowed_signers_file = temp_dir.path().join("allowed_signers");
+    
+    // Write message to file
+    fs::write(&message_file, command.as_bytes())?;
+    
+    // Decode and write signature
+    let sig_bytes = general_purpose::STANDARD.decode(signature)
+        .with_context(|| "Failed to decode base64 signature")?;
+    fs::write(&signature_file, sig_bytes)?;
+    
+    // Create allowed_signers file from trusted keys
+    create_allowed_signers_file(&allowed_signers_file, &config.trusted_keys_path)?;
+    
+    // Use ssh-keygen to verify signature
+    let output = std::process::Command::new("ssh-keygen")
+        .arg("-Y")
+        .arg("verify")
+        .arg("-f")
+        .arg(&allowed_signers_file)
+        .arg("-I")
+        .arg("magicrune")
+        .arg("-n")
+        .arg("command")
+        .arg("-s")
+        .arg(&signature_file)
+        .arg(&message_file)
+        .output();
+    
+    match output {
+        Ok(result) => {
+            if result.status.success() {
+                info!("SSH signature verification succeeded");
+                Ok(true)
+            } else {
+                let stderr = String::from_utf8_lossy(&result.stderr);
+                debug!("SSH signature verification failed: {}", stderr);
+                Ok(false)
+            }
+        }
+        Err(e) => {
+            debug!("ssh-keygen command failed: {}", e);
+            // Fallback to manual verification if ssh-keygen is not available
+            verify_ssh_signature_fallback(command, signature, config)
+        }
+    }
 }
 
 fn verify_gpg_signature(
@@ -52,9 +100,73 @@ fn verify_gpg_signature(
 ) -> Result<bool> {
     debug!("Verifying GPG signature");
     
-    // For now, return a placeholder
-    // TODO: Implement actual GPG signature verification
-    Ok(false)
+    // Create temporary files for verification
+    let temp_dir = tempfile::tempdir()?;
+    let message_file = temp_dir.path().join("message.txt");
+    let signature_file = temp_dir.path().join("signature.sig");
+    
+    // Write message to file
+    fs::write(&message_file, command.as_bytes())?;
+    
+    // Decode and write signature
+    let sig_bytes = general_purpose::STANDARD.decode(signature)
+        .with_context(|| "Failed to decode base64 signature")?;
+    fs::write(&signature_file, sig_bytes)?;
+    
+    // Import trusted keys to temporary keyring
+    let keyring_dir = temp_dir.path().join("gnupg");
+    fs::create_dir_all(&keyring_dir)?;
+    
+    // Set GNUPGHOME to temporary directory
+    let mut cmd = std::process::Command::new("gpg");
+    cmd.env("GNUPGHOME", &keyring_dir);
+    
+    // Import trusted keys
+    if config.trusted_keys_path.exists() {
+        for entry in fs::read_dir(&config.trusted_keys_path)? {
+            let entry = entry?;
+            let path = entry.path();
+            
+            if path.extension().and_then(|s| s.to_str()) == Some("asc") ||
+               path.extension().and_then(|s| s.to_str()) == Some("gpg") {
+                let import_result = std::process::Command::new("gpg")
+                    .env("GNUPGHOME", &keyring_dir)
+                    .arg("--import")
+                    .arg(&path)
+                    .output();
+                
+                if let Err(e) = import_result {
+                    debug!("Failed to import GPG key {}: {}", path.display(), e);
+                }
+            }
+        }
+    }
+    
+    // Verify signature
+    let output = std::process::Command::new("gpg")
+        .env("GNUPGHOME", &keyring_dir)
+        .arg("--verify")
+        .arg(&signature_file)
+        .arg(&message_file)
+        .output();
+    
+    match output {
+        Ok(result) => {
+            if result.status.success() {
+                info!("GPG signature verification succeeded");
+                Ok(true)
+            } else {
+                let stderr = String::from_utf8_lossy(&result.stderr);
+                debug!("GPG signature verification failed: {}", stderr);
+                Ok(false)
+            }
+        }
+        Err(e) => {
+            debug!("gpg command failed: {}", e);
+            warn!("GPG not available for signature verification");
+            Ok(false)
+        }
+    }
 }
 
 fn verify_git_signature(
@@ -156,6 +268,38 @@ impl TrustedKeyStore {
         }
         Ok(())
     }
+}
+
+fn create_allowed_signers_file(file_path: &Path, trusted_keys_dir: &Path) -> Result<()> {
+    let mut allowed_signers = String::new();
+    
+    // Read all trusted keys
+    if trusted_keys_dir.exists() {
+        for entry in fs::read_dir(trusted_keys_dir)? {
+            let entry = entry?;
+            let path = entry.path();
+            
+            if path.extension().and_then(|s| s.to_str()) == Some("pub") {
+                let key_content = fs::read_to_string(&path)?;
+                // Format: identity keytype base64key comment
+                allowed_signers.push_str(&format!("magicrune {}\n", key_content.trim()));
+            }
+        }
+    }
+    
+    fs::write(file_path, allowed_signers)?;
+    Ok(())
+}
+
+fn verify_ssh_signature_fallback(
+    _command: &str, 
+    _signature: &str, 
+    _config: &SigningConfig
+) -> Result<bool> {
+    warn!("SSH signature verification fallback - ssh-keygen not available");
+    // In production, this should implement manual SSH signature verification
+    // For now, we return false (verification failed)
+    Ok(false)
 }
 
 fn extract_key_id(key_content: &str) -> Result<String> {

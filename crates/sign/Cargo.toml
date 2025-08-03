@@ -11,6 +11,7 @@ anyhow.workspace = true
 tracing.workspace = true
 base64.workspace = true
 sha2.workspace = true
+tempfile.workspace = true
 ed25519-dalek = "2.1"
 rsa = "0.9"
 pgp = "0.10"

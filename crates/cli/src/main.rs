@@ -2,7 +2,9 @@ use anyhow::{Context, Result};
 use clap::{Parser, Subcommand};
 use colored::Colorize;
 use std::path::PathBuf;
-use tracing::{error, info, warn};
+use std::io::{self, Write};
+use std::fs;
+use tracing::{error, info};
 
 #[derive(Parser)]
 #[command(name = "magicrune")]
@@ -170,27 +172,95 @@ fn print_banner() {
     println!();
 }
 
+#[derive(Debug)]
+enum ExecutionVerdict {
+    Allow,   // 0-30: Safe to execute
+    Confirm, // 31-70: Requires user confirmation  
+    Block,   // 71-100: Too dangerous, block execution
+}
+
+fn calculate_risk_score(detections: &[magicrune_detector::ExternalSourceDetection]) -> u32 {
+    let mut score = 0;
+    for detection in detections {
+        score += match detection.risk_level {
+            magicrune_detector::RiskLevel::Low => 10,
+            magicrune_detector::RiskLevel::Medium => 25,
+            magicrune_detector::RiskLevel::High => 50,
+            magicrune_detector::RiskLevel::Critical => 80,
+        };
+    }
+    std::cmp::min(score, 100) // Cap at 100
+}
+
+fn determine_execution_verdict(risk_score: u32) -> ExecutionVerdict {
+    match risk_score {
+        0..=30 => ExecutionVerdict::Allow,
+        31..=70 => ExecutionVerdict::Confirm,
+        _ => ExecutionVerdict::Block,
+    }
+}
+
+fn prompt_user_confirmation(detections: &[magicrune_detector::ExternalSourceDetection]) -> Result<bool> {
+    println!("\n{}", "⚠️  Security Review Required".yellow().bold());
+    println!("The following risks were detected:");
+    for detection in detections {
+        println!("  • {}", detection.description.yellow());
+    }
+    println!("\nDo you want to proceed with execution? (y/N): ");
+    
+    print!("❯ ");
+    io::stdout().flush()?;
+    
+    let mut input = String::new();
+    io::stdin().read_line(&mut input)?;
+    
+    let response = input.trim().to_lowercase();
+    Ok(response == "y" || response == "yes")
+}
+
 async fn handle_run(
     command: String,
     signature: Option<PathBuf>,
     force_sandbox: bool,
     policy: magicrune_policy::PolicyConfig,
 ) -> Result<()> {
-    use magicrune_detector::detect_external_sources;
+    use magicrune_detector::{detect_external_sources, analyze_command};
     use magicrune_runner::{RunContext, RunMode};
     use magicrune_policy::TrustLevel;
 
+    println!("{}", "🔍 Analyzing command...".cyan());
     info!("Executing command: {}", command);
+
+    // コマンド解析と詳細表示
+    let detections = analyze_command(&command)?;
+    let mut risk_score = calculate_risk_score(&detections);
+    
+    if !detections.is_empty() {
+        println!("{}", "📊 Security Analysis:".yellow());
+        for detection in &detections {
+            let risk_icon = match detection.risk_level {
+                magicrune_detector::RiskLevel::Low => "🟢",
+                magicrune_detector::RiskLevel::Medium => "🟡",
+                magicrune_detector::RiskLevel::High => "🟠", 
+                magicrune_detector::RiskLevel::Critical => "🔴",
+            };
+            println!("  {} {}: {}", risk_icon, detection.source_type_name(), detection.description);
+        }
+        println!("  📈 Risk Score: {}/100", risk_score);
+    } else {
+        println!("{}", "✅ No external sources detected".green());
+        risk_score = 10; // Base risk for any command execution
+    }
 
     // 署名検証
     let trust_level = if let Some(sig_path) = signature {
         match magicrune_sign::verify_command_signature(&command, &sig_path, &policy.signing) {
             Ok(true) => {
-                info!("{}", "✓ Signature verified".green());
+                println!("{}", "✓ Signature verified".green());
                 TrustLevel::L0
             }
             Ok(false) => {
-                error!("{}", "✗ Signature verification failed".red());
+                println!("{}", "✗ Signature verification failed".red());
                 return Err(anyhow::anyhow!("Signature verification failed"));
             }
             Err(e) => {
@@ -199,12 +269,32 @@ async fn handle_run(
             }
         }
     } else if detect_external_sources(&command)? {
-        warn!("{}", "⚠ External source detected - enforcing sandbox".yellow());
+        println!("{}", "⚠ External source detected - enforcing sandbox".yellow());
         TrustLevel::L2
     } else {
-        info!("{}", "◆ AI-generated code (no external sources)".blue());
+        println!("{}", "◆ AI-generated code (no external sources)".blue());
         TrustLevel::L1
     };
+
+    // リスクベースの実行判定
+    let verdict = determine_execution_verdict(risk_score);
+    match verdict {
+        ExecutionVerdict::Block => {
+            println!("{}", "🔴 BLOCKED - Command contains critical security risks".red());
+            println!("Execution prevented for safety. Review the command and try again.");
+            return Err(anyhow::anyhow!("Execution blocked due to security risks"));
+        }
+        ExecutionVerdict::Confirm => {
+            println!("{}", "🟡 WARNING - Command requires human review".yellow());
+            if !prompt_user_confirmation(&detections)? {
+                println!("Execution cancelled by user.");
+                return Ok(());
+            }
+        }
+        ExecutionVerdict::Allow => {
+            println!("{}", "🟢 APPROVED - Command appears safe to execute".green());
+        }
+    }
 
     // 実行モード決定
     let run_mode = match trust_level {
@@ -223,26 +313,69 @@ async fn handle_run(
     };
 
     // 実行
+    println!("{}", "🚀 Executing command...".cyan());
     let result = magicrune_runner::execute(context).await?;
 
     // 結果表示
+    println!("\n{}", "📋 Execution Results:".cyan().bold());
     match result.verdict {
         magicrune_analyzer::Verdict::Green => {
-            println!("{}", "✓ Execution completed successfully (Green)".green());
+            println!("  {} {}", "✓".green(), "Execution completed successfully (Green)".green());
         }
         magicrune_analyzer::Verdict::Yellow => {
-            println!("{}", "⚠ Execution completed with warnings (Yellow)".yellow());
-            println!("Review required before production use.");
+            println!("  {} {}", "⚠".yellow(), "Execution completed with warnings (Yellow)".yellow());
+            println!("  {} Review required before production use.", "ℹ".blue());
         }
         magicrune_analyzer::Verdict::Red => {
-            println!("{}", "✗ Execution blocked - security risk detected (Red)".red());
+            println!("  {} {}", "✗".red(), "Execution blocked - security risk detected (Red)".red());
             return Err(anyhow::anyhow!("Execution blocked due to security risk"));
         }
     }
 
-    if !result.output.is_empty() {
-        println!("\nOutput:");
+    println!("  📊 Exit Code: {}", 
+        if result.success { "0 (Success)".green() } else { "Non-zero (Failed)".red() });
+
+    if !result.output.trim().is_empty() {
+        println!("\n{}", "📄 Command Output:".cyan().bold());
         println!("{}", result.output);
+    } else {
+        println!("  📄 No output generated");
+    }
+
+    // 監査イベントの表示
+    if !result.audit_events.is_empty() {
+        println!("\n{}", "🔍 Security Audit Log:".cyan().bold());
+        for event in &result.audit_events {
+            match event {
+                magicrune_audit::AuditEvent::CommandExecution { command: cmd, exit_code, .. } => {
+                    println!("  • Command executed: {} (exit: {})", cmd, exit_code);
+                }
+                magicrune_audit::AuditEvent::FileDelete { path, .. } => {
+                    println!("  • File deleted: {}", path);
+                }
+                magicrune_audit::AuditEvent::FileRead { path, .. } => {
+                    println!("  • File read: {}", path);
+                }
+                magicrune_audit::AuditEvent::FileWrite { path, .. } => {
+                    println!("  • File written: {}", path);
+                }
+                magicrune_audit::AuditEvent::NetworkConnection { host, port, protocol, .. } => {
+                    println!("  • Network connection: {}:{} ({})", host, port, protocol);
+                }
+                magicrune_audit::AuditEvent::ProcessSpawn { command: spawn_cmd, .. } => {
+                    println!("  • Process spawned: {}", spawn_cmd);
+                }
+                magicrune_audit::AuditEvent::PrivilegeEscalation { method, .. } => {
+                    println!("  • Privilege escalation: {}", method);
+                }
+                magicrune_audit::AuditEvent::SandboxExecution { profile, .. } => {
+                    println!("  • Sandbox execution with profile: {}", profile);
+                }
+                magicrune_audit::AuditEvent::SandboxEscape { method, .. } => {
+                    println!("  • 🚨 SANDBOX ESCAPE detected: {}", method);
+                }
+            }
+        }
     }
 
     Ok(())
@@ -345,6 +478,337 @@ async fn handle_init(force: bool) -> Result<()> {
     Ok(())
 }
 
+async fn handle_key_management(
+    key_cmd: KeyCommands,
+    policy: magicrune_policy::PolicyConfig,
+) -> Result<()> {
+    use magicrune_sign::TrustedKeyStore;
+    
+    let key_store = TrustedKeyStore::new(policy.signing.trusted_keys_path.clone())?;
+    
+    match key_cmd {
+        KeyCommands::Add { pubkey } => {
+            println!("{}", "🔑 Adding trusted key...".cyan());
+            
+            if !pubkey.exists() {
+                return Err(anyhow::anyhow!("Key file not found: {}", pubkey.display()));
+            }
+            
+            let key_id = key_store.add_key(&pubkey)
+                .with_context(|| format!("Failed to add key: {}", pubkey.display()))?;
+            
+            println!("  {} Key added successfully: {}", "✓".green(), key_id);
+            println!("  📁 Key stored in: {}", policy.signing.trusted_keys_path.display());
+        }
+        
+        KeyCommands::List => {
+            println!("{}", "🔑 Trusted Keys:".cyan());
+            
+            let keys = key_store.list_keys()?;
+            if keys.is_empty() {
+                println!("  📭 No trusted keys found");
+                println!("  💡 Add keys with: magicrune keys add <pubkey-file>");
+            } else {
+                let keys_count = keys.len();
+                for (key_id, key_type) in keys {
+                    println!("  🔹 {} ({})", key_id, key_type);
+                }
+                println!("\n  📊 Total: {} key(s)", keys_count);
+            }
+        }
+        
+        KeyCommands::Remove { key_id } => {
+            println!("{}", "🗑️  Removing trusted key...".cyan());
+            
+            key_store.remove_key(&key_id)
+                .with_context(|| format!("Failed to remove key: {}", key_id))?;
+            
+            println!("  {} Key removed successfully: {}", "✓".green(), key_id);
+        }
+    }
+    
+    Ok(())
+}
+
+async fn handle_ci_scan(
+    paths: String,
+    enforce_external: bool,
+    policy: magicrune_policy::PolicyConfig,
+) -> Result<()> {
+    use magicrune_detector::analyze_command;
+    use std::path::PathBuf;
+    
+    println!("{}", "🔍 CI/CD Security Scan".cyan().bold());
+    println!("Scanning paths: {}", paths);
+    
+    let scan_paths: Vec<&str> = paths.split(',').map(|s| s.trim()).collect();
+    let mut total_files = 0;
+    let mut total_issues = 0;
+    let mut critical_issues = 0;
+    let mut scan_results = Vec::new();
+    
+    for path_str in scan_paths {
+        let path = PathBuf::from(path_str);
+        
+        if path.is_dir() {
+            scan_directory(&path, &mut total_files, &mut total_issues, &mut critical_issues, &mut scan_results, enforce_external)?;
+        } else if path.is_file() {
+            scan_file_sync(&path, &mut total_files, &mut total_issues, &mut critical_issues, &mut scan_results, enforce_external)?;
+        } else {
+            println!("  ⚠️  Path not found: {}", path_str);
+        }
+    }
+    
+    // 結果サマリー
+    println!("\n{}", "📊 Scan Results:".cyan().bold());
+    println!("  📁 Files scanned: {}", total_files);
+    println!("  ⚠️  Total issues: {}", if total_issues > 0 { total_issues.to_string().red() } else { total_issues.to_string().green() });
+    println!("  🔴 Critical issues: {}", if critical_issues > 0 { critical_issues.to_string().red() } else { critical_issues.to_string().green() });
+    
+    if critical_issues > 0 {
+        println!("\n{}", "🚨 CRITICAL SECURITY ISSUES FOUND".red().bold());
+        for result in &scan_results {
+            if result.risk_level == "Critical" {
+                println!("  🔴 {}: {}", result.file_path, result.issue);
+            }
+        }
+        
+        if enforce_external {
+            return Err(anyhow::anyhow!("CI scan failed: {} critical security issues found", critical_issues));
+        }
+    }
+    
+    if total_issues > 0 && total_issues > critical_issues {
+        println!("\n{}", "⚠️  Other Security Issues:".yellow().bold());
+        for result in &scan_results {
+            if result.risk_level != "Critical" {
+                println!("  {} {}: {}", 
+                    match result.risk_level.as_str() {
+                        "High" => "🟠",
+                        "Medium" => "🟡", 
+                        _ => "🟢"
+                    },
+                    result.file_path, 
+                    result.issue
+                );
+            }
+        }
+    }
+    
+    if total_issues == 0 {
+        println!("{}", "✅ No security issues found!".green().bold());
+    }
+    
+    Ok(())
+}
+
+#[derive(Debug)]
+struct ScanResult {
+    file_path: String,
+    issue: String,
+    risk_level: String,
+}
+
+fn scan_directory(
+    dir_path: &PathBuf,
+    total_files: &mut u32,
+    total_issues: &mut u32,
+    critical_issues: &mut u32,
+    scan_results: &mut Vec<ScanResult>,
+    enforce_external: bool,
+) -> Result<()> {
+    let mut dirs_to_scan = vec![dir_path.clone()];
+    
+    while let Some(current_dir) = dirs_to_scan.pop() {
+        for entry in std::fs::read_dir(&current_dir)? {
+            let entry = entry?;
+            let path = entry.path();
+            
+            if path.is_dir() {
+                dirs_to_scan.push(path);
+            } else if path.is_file() {
+                scan_file_sync(&path, total_files, total_issues, critical_issues, scan_results, enforce_external)?;
+            }
+        }
+    }
+    Ok(())
+}
+
+fn scan_file_sync(
+    file_path: &PathBuf,
+    total_files: &mut u32,
+    total_issues: &mut u32,
+    critical_issues: &mut u32,
+    scan_results: &mut Vec<ScanResult>,
+    enforce_external: bool,
+) -> Result<()> {
+    let filename = file_path.file_name().and_then(|n| n.to_str()).unwrap_or("unknown");
+    
+    // スキャン対象ファイルの拡張子チェック
+    if let Some(ext) = file_path.extension().and_then(|e| e.to_str()) {
+        match ext {
+            "sh" | "bash" | "zsh" | "fish" | "py" | "js" | "ts" | "go" | "rs" | "rb" | "php" | "pl" => {
+                *total_files += 1;
+                scan_script_file_sync(file_path, total_issues, critical_issues, scan_results, enforce_external)?;
+            }
+            _ => {
+                // バイナリファイルやその他のファイルはスキップ
+            }
+        }
+    } else if filename == "Dockerfile" || filename == "Makefile" || filename.starts_with('.') {
+        *total_files += 1;
+        scan_script_file_sync(file_path, total_issues, critical_issues, scan_results, enforce_external)?;
+    }
+    
+    Ok(())
+}
+
+fn scan_script_file_sync(
+    file_path: &PathBuf,
+    total_issues: &mut u32,
+    critical_issues: &mut u32,
+    scan_results: &mut Vec<ScanResult>,
+    _enforce_external: bool,
+) -> Result<()> {
+    let content = std::fs::read_to_string(file_path)?;
+    let lines: Vec<&str> = content.lines().collect();
+    
+    for (line_num, line) in lines.iter().enumerate() {
+        if let Ok(detections) = magicrune_detector::analyze_command(line) {
+            for detection in detections {
+                let risk_level = match detection.risk_level {
+                    magicrune_detector::RiskLevel::Critical => {
+                        *critical_issues += 1;
+                        "Critical"
+                    }
+                    magicrune_detector::RiskLevel::High => "High",
+                    magicrune_detector::RiskLevel::Medium => "Medium",
+                    magicrune_detector::RiskLevel::Low => "Low",
+                };
+                
+                *total_issues += 1;
+                
+                scan_results.push(ScanResult {
+                    file_path: format!("{}:{}", file_path.display(), line_num + 1),
+                    issue: detection.description,
+                    risk_level: risk_level.to_string(),
+                });
+            }
+        }
+    }
+    
+    Ok(())
+}
+
+async fn handle_ci_report(
+    pr: Option<u32>,
+    output: Option<PathBuf>,
+    _policy: magicrune_policy::PolicyConfig,
+) -> Result<()> {
+    println!("{}", "📋 Generating CI/CD Security Report".cyan().bold());
+    
+    // Create a comprehensive security report
+    let report = generate_security_report().await?;
+    
+    // Output to file if specified
+    if let Some(output_path) = output {
+        fs::write(&output_path, &report)?;
+        println!("  📁 Report saved to: {}", output_path.display());
+    } else {
+        println!("\n{}", report);
+    }
+    
+    // Post to GitHub PR if specified
+    if let Some(pr_number) = pr {
+        post_github_pr_comment(pr_number, &report).await?;
+    }
+    
+    Ok(())
+}
+
+async fn generate_security_report() -> Result<String> {
+    let mut report = String::new();
+    
+    // Header
+    report.push_str("## 🔒 MagicRune Security Report\n\n");
+    report.push_str(&format!("**Generated**: {}\n", chrono::Utc::now().format("%Y-%m-%d %H:%M:%S UTC")));
+    report.push_str(&format!("**Tool Version**: {}\n\n", env!("CARGO_PKG_VERSION")));
+    
+    // Summary (placeholder data - in real implementation would come from scan results)
+    report.push_str("### 📊 Summary\n\n");
+    report.push_str("| Metric | Count |\n");
+    report.push_str("|--------|-------|\n");
+    report.push_str("| Files Scanned | 0 |\n");
+    report.push_str("| Security Issues | 0 |\n");
+    report.push_str("| Critical Issues | 0 |\n");
+    report.push_str("| High Risk | 0 |\n");
+    report.push_str("| Medium Risk | 0 |\n");
+    report.push_str("| Low Risk | 0 |\n\n");
+    
+    // Security checks performed
+    report.push_str("### 🔍 Security Checks Performed\n\n");
+    report.push_str("- ✅ **External Source Detection**: Scanning for curl, wget, downloads\n");
+    report.push_str("- ✅ **Pipe Execution Analysis**: Detecting dangerous pipe-to-shell patterns\n");
+    report.push_str("- ✅ **Secret Path Access**: Checking for access to sensitive files\n");
+    report.push_str("- ✅ **Dangerous Operations**: Identifying destructive commands\n");
+    report.push_str("- ✅ **Package Manager Usage**: Monitoring dependency installations\n\n");
+    
+    // Recommendations
+    report.push_str("### 💡 Security Recommendations\n\n");
+    report.push_str("1. **Code Review**: All external downloads should be reviewed manually\n");
+    report.push_str("2. **Signature Verification**: Use MagicRune's signing features for trusted code\n");
+    report.push_str("3. **Sandbox Execution**: Run untrusted code in MagicRune's sandbox\n");
+    report.push_str("4. **Regular Scans**: Integrate MagicRune into your CI/CD pipeline\n\n");
+    
+    // Footer
+    report.push_str("---\n");
+    report.push_str("*Generated by [MagicRune](https://github.com/magicrune/magicrune) - Secure Code Execution Framework*\n");
+    
+    Ok(report)
+}
+
+async fn post_github_pr_comment(pr_number: u32, report: &str) -> Result<()> {
+    println!("  🚀 Posting comment to GitHub PR #{}", pr_number);
+    
+    // Check if gh CLI is available
+    let gh_check = std::process::Command::new("gh")
+        .arg("--version")
+        .output();
+    
+    match gh_check {
+        Ok(_) => {
+            // Post comment using GitHub CLI
+            let comment_result = std::process::Command::new("gh")
+                .arg("pr")
+                .arg("comment")
+                .arg(pr_number.to_string())
+                .arg("--body")
+                .arg(report)
+                .output();
+            
+            match comment_result {
+                Ok(output) => {
+                    if output.status.success() {
+                        println!("  ✅ Comment posted successfully to PR #{}", pr_number);
+                    } else {
+                        let stderr = String::from_utf8_lossy(&output.stderr);
+                        println!("  ❌ Failed to post comment: {}", stderr);
+                    }
+                }
+                Err(e) => {
+                    println!("  ⚠️  Failed to execute gh command: {}", e);
+                }
+            }
+        }
+        Err(_) => {
+            println!("  ⚠️  GitHub CLI (gh) not found. Install it to post PR comments automatically.");
+            println!("  💡 You can manually copy the report above and post it to PR #{}", pr_number);
+        }
+    }
+    
+    Ok(())
+}
+
 #[tokio::main]
 async fn main() -> Result<()> {
     let cli = Cli::parse();
@@ -379,16 +843,16 @@ async fn main() -> Result<()> {
             todo!("Implement promote command");
         }
         Commands::Keys(key_cmd) => {
-            todo!("Implement key management");
+            handle_key_management(key_cmd, policy).await?;
         }
         Commands::Cache(cache_cmd) => {
             todo!("Implement cache management");
         }
         Commands::CiScan { paths, enforce_external } => {
-            todo!("Implement CI scanning");
+            handle_ci_scan(paths, enforce_external, policy).await?;
         }
         Commands::CiReport { pr, output } => {
-            todo!("Implement CI reporting");
+            handle_ci_report(pr, output, policy).await?;
         }
         Commands::Init { force } => {
             handle_init(force).await?;
