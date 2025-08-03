@@ -13,9 +13,11 @@ magicrune-analyzer = { path = "../analyzer" }
 tokio.workspace = true
 anyhow.workspace = true
 tracing.workspace = true
-nix.workspace = true
 tempfile = "3.8"
 libc = "0.2"
+
+[target.'cfg(unix)'.dependencies]
+nix.workspace = true
 
 [target.'cfg(target_os = "linux")'.dependencies]
 caps = "0.5"

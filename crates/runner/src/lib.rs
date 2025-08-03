@@ -59,11 +59,19 @@ pub async fn execute(context: RunContext) -> Result<ExecutionResult> {
 async fn execute_direct(context: RunContext) -> Result<ExecutionResult> {
     info!("Direct execution mode (L0 - signed)");
     
-    let output = Command::new("sh")
-        .arg("-c")
-        .arg(&context.command)
-        .output()
-        .context("Failed to execute command")?;
+    let output = if cfg!(target_os = "windows") {
+        Command::new("cmd")
+            .arg("/C")
+            .arg(&context.command)
+            .output()
+            .context("Failed to execute command")?
+    } else {
+        Command::new("sh")
+            .arg("-c")
+            .arg(&context.command)
+            .output()
+            .context("Failed to execute command")?
+    };
 
     let stdout = String::from_utf8_lossy(&output.stdout);
     let stderr = String::from_utf8_lossy(&output.stderr);
@@ -86,11 +94,19 @@ async fn execute_local(context: RunContext) -> Result<ExecutionResult> {
     // Execute with basic monitoring
     let start_time = std::time::Instant::now();
     
-    let output = Command::new("sh")
-        .arg("-c")
-        .arg(&context.command)
-        .output()
-        .context("Failed to execute command")?;
+    let output = if cfg!(target_os = "windows") {
+        Command::new("cmd")
+            .arg("/C")
+            .arg(&context.command)
+            .output()
+            .context("Failed to execute command")?
+    } else {
+        Command::new("sh")
+            .arg("-c")
+            .arg(&context.command)
+            .output()
+            .context("Failed to execute command")?
+    };
 
     let duration = start_time.elapsed();
     
