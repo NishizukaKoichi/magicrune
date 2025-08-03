@@ -32,7 +32,7 @@ function getPlatform() {
 async function downloadBinary() {
   const platform = getPlatform();
   const ext = os.platform() === 'win32' ? '.exe' : '';
-  const filename = `magicrune-${platform}${ext}.tar.gz`;
+  const filename = platform.endsWith('windows-msvc') ? `magicrune-${platform}.zip` : `magicrune-${platform}.tar.gz`;
   const url = `https://github.com/${REPO}/releases/download/v${VERSION}/${filename}`;
   
   console.log(`Downloading MagicRune ${VERSION} for ${platform}...`);

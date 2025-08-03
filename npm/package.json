@@ -1,6 +1,6 @@
 {
   "name": "magicrune-cli",
-  "version": "0.3.0",
+  "version": "0.2.1",
   "description": "Complete security framework for safe execution of AI-generated and external code with risk analysis, signature verification, and sandbox isolation",
   "main": "index.js",
   "bin": {
