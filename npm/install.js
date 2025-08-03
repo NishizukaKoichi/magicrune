@@ -79,17 +79,24 @@ async function downloadBinary() {
 
 async function extractBinary(buffer) {
   const binDir = path.join(__dirname, 'bin');
+  const tempFile = path.join(__dirname, 'temp.tar.gz');
   
   if (!fs.existsSync(binDir)) {
     fs.mkdirSync(binDir, { recursive: true });
   }
   
+  // Write buffer to temporary file
+  fs.writeFileSync(tempFile, buffer);
+  
   // Extract tar.gz
   await tar.extract({
-    file: buffer,
+    file: tempFile,
     cwd: binDir,
     strip: 0,
   });
+  
+  // Clean up temporary file
+  fs.unlinkSync(tempFile);
   
   // Make executable on Unix
   if (os.platform() !== 'win32') {
