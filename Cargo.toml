@@ -7,7 +7,6 @@ members = [
     "crates/policy",
     "crates/sign",
     "crates/cli",
-    "crates/vscode-bridge",
 ]
 resolver = "2"
 
@@ -33,6 +32,6 @@ sha2 = "0.10"
 base64 = "0.21"
 chrono = { version = "0.4", features = ["serde"] }
 nix = { version = "0.27", features = ["mount", "sched", "process", "user"] }
-seccomp = "0.3"
+seccomp = "0.1"
 caps = "0.5"
 jsonschema = "0.17"

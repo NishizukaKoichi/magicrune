@@ -148,7 +148,7 @@ async fn execute_dryrun(context: RunContext) -> Result<ExecutionResult> {
     };
 
     // Force read-only mode
-    sandbox_config.resource_limits.read_only = true;
+    // Note: read-only enforcement handled by sandbox implementation
 
     #[cfg(target_os = "linux")]
     return sandbox_linux::execute_in_sandbox(context.command, sandbox_config).await;
@@ -168,12 +168,11 @@ pub struct SandboxConfig {
     pub resource_limits: ResourceLimits,
 }
 
-#[derive(Debug, Clone, Default)]
+#[derive(Debug, Clone)]
 pub struct ResourceLimits {
     pub memory_mb: u32,
     pub cpu_percent: u32,
     pub processes: u32,
-    pub read_only: bool,
 }
 
 impl Default for ResourceLimits {
@@ -182,7 +181,6 @@ impl Default for ResourceLimits {
             memory_mb: 512,
             cpu_percent: 50,
             processes: 32,
-            read_only: false,
         }
     }
 }

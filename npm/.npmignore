@@ -1,0 +1,9 @@
+*.test.js
+*.spec.js
+test/
+docs/
+.github/
+.git/
+.gitignore
+*.log
+*.tgz

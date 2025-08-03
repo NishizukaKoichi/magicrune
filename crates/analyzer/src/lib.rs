@@ -2,7 +2,7 @@ use anyhow::Result;
 use magicrune_audit::AuditEvent;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
-use tracing::{debug, info};
+use tracing::debug;
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub enum Verdict {
@@ -135,6 +135,16 @@ pub fn analyze_behavior(events: &[AuditEvent]) -> Result<BehaviorAnalysis> {
             
             AuditEvent::SandboxExecution { profile, restrictions } => {
                 debug!("Sandbox execution with profile: {} and restrictions: {:?}", profile, restrictions);
+            }
+            
+            AuditEvent::FileDelete { path, .. } => {
+                behaviors.push(DetectedBehavior {
+                    category: "file_deletion".to_string(),
+                    description: format!("File deleted: {}", path),
+                    severity: Severity::Medium,
+                    evidence: vec![path.clone()],
+                });
+                risk_score += 30;
             }
         }
     }

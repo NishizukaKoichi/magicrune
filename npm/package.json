@@ -1,0 +1,43 @@
+{
+  "name": "magicrune-cli",
+  "version": "0.1.0",
+  "description": "Policy-based sandbox for safe code execution",
+  "main": "index.js",
+  "bin": {
+    "magicrune": "./bin/magicrune.js"
+  },
+  "scripts": {
+    "postinstall": "node install.js",
+    "test": "node test.js"
+  },
+  "keywords": [
+    "security",
+    "sandbox",
+    "code-execution",
+    "ai-safety",
+    "cli"
+  ],
+  "author": "MagicRune Team",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/NishizukaKoichi/magicrune.git"
+  },
+  "engines": {
+    "node": ">=14.0.0"
+  },
+  "os": [
+    "darwin",
+    "linux",
+    "win32"
+  ],
+  "cpu": [
+    "x64",
+    "arm64"
+  ],
+  "dependencies": {
+    "node-fetch": "^2.6.7",
+    "tar": "^6.1.0",
+    "progress": "^2.0.3"
+  }
+}
