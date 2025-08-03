@@ -20,8 +20,8 @@ libc = "0.2"
 nix.workspace = true
 
 [target.'cfg(target_os = "linux")'.dependencies]
-caps = "0.5"
-seccomp = "0.1"
+caps = { version = "0.5", optional = true }
+seccomp = { version = "0.1", optional = true }
 
 [dev-dependencies]
 tempfile = "3.8"
