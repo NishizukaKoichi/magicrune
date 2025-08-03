@@ -280,6 +280,7 @@ jobs:
         run: |
           git config --local user.email "action@github.com"
           git config --local user.name "GitHub Action"
+          git checkout main || git checkout -b main
           git add homebrew-formula.rb
           git commit -m "Update Homebrew formula to v${{ steps.version.outputs.version }}" || exit 0
-          git push
+          git push origin main
