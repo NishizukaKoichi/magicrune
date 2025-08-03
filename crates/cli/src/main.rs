@@ -809,6 +809,264 @@ async fn post_github_pr_comment(pr_number: u32, report: &str) -> Result<()> {
     Ok(())
 }
 
+async fn handle_cache_management(
+    cache_cmd: CacheCommands,
+    policy: magicrune_policy::PolicyConfig,
+) -> Result<()> {
+    use std::fs;
+    use std::time::{SystemTime, UNIX_EPOCH};
+    use chrono::{DateTime, Utc, Duration};
+    
+    let cache_dir = policy.cache.as_ref()
+        .map(|c| c.path.clone())
+        .unwrap_or_else(|| std::env::current_dir().unwrap().join(".magicrune/cache"));
+    
+    match cache_cmd {
+        CacheCommands::Allow { action } => {
+            match action {
+                AllowAction::Pin { package, sha256 } => {
+                    println!("{}", "📦 Pinning package to cache...".cyan());
+                    
+                    // Create cache directory if it doesn't exist
+                    if !cache_dir.exists() {
+                        fs::create_dir_all(&cache_dir)?;
+                    }
+                    
+                    // Parse package name and version
+                    let parts: Vec<&str> = package.split('@').collect();
+                    if parts.len() != 2 {
+                        return Err(anyhow::anyhow!("Invalid package format. Use: package@version"));
+                    }
+                    
+                    let package_name = parts[0];
+                    let version = parts[1];
+                    
+                    // Create package cache entry
+                    let cache_entry = serde_json::json!({
+                        "package": package_name,
+                        "version": version,
+                        "sha256": sha256,
+                        "pinned_at": Utc::now().to_rfc3339(),
+                        "status": "trusted"
+                    });
+                    
+                    let cache_file = cache_dir.join(format!("{}_{}.json", package_name, version));
+                    fs::write(&cache_file, serde_json::to_string_pretty(&cache_entry)?)?;
+                    
+                    println!("  {} Package pinned: {}@{}", "✓".green(), package_name, version);
+                    println!("  📁 Cache entry: {}", cache_file.display());
+                    println!("  🔒 SHA256: {}", sha256);
+                }
+            }
+        }
+        
+        CacheCommands::Clear { all, older_than } => {
+            println!("{}", "🧹 Clearing cache...".cyan());
+            
+            if !cache_dir.exists() {
+                println!("  📭 Cache directory doesn't exist");
+                return Ok(());
+            }
+            
+            let mut cleared_count = 0;
+            let cutoff_time = if let Some(days) = older_than {
+                Some(Utc::now() - Duration::days(days as i64))
+            } else {
+                None
+            };
+            
+            for entry in fs::read_dir(&cache_dir)? {
+                let entry = entry?;
+                let path = entry.path();
+                
+                if path.extension().and_then(|s| s.to_str()) == Some("json") {
+                    let should_remove = if all {
+                        true
+                    } else if let Some(cutoff) = cutoff_time {
+                        // Check file modification time
+                        let metadata = fs::metadata(&path)?;
+                        let modified = metadata.modified()?;
+                        let modified_datetime = DateTime::<Utc>::from(modified);
+                        modified_datetime < cutoff
+                    } else {
+                        false
+                    };
+                    
+                    if should_remove {
+                        fs::remove_file(&path)?;
+                        cleared_count += 1;
+                        println!("  🗑️  Removed: {}", path.file_name().unwrap().to_string_lossy());
+                    }
+                }
+            }
+            
+            println!("  {} Cleared {} cache entries", "✓".green(), cleared_count);
+        }
+        
+        CacheCommands::Stats => {
+            println!("{}", "📊 Cache Statistics".cyan());
+            
+            if !cache_dir.exists() {
+                println!("  📭 Cache directory doesn't exist");
+                return Ok(());
+            }
+            
+            let mut total_entries = 0;
+            let mut total_size = 0;
+            let mut pinned_packages = Vec::new();
+            
+            for entry in fs::read_dir(&cache_dir)? {
+                let entry = entry?;
+                let path = entry.path();
+                
+                if path.extension().and_then(|s| s.to_str()) == Some("json") {
+                    total_entries += 1;
+                    
+                    // Get file size
+                    let metadata = fs::metadata(&path)?;
+                    total_size += metadata.len();
+                    
+                    // Parse cache entry
+                    if let Ok(content) = fs::read_to_string(&path) {
+                        if let Ok(cache_entry) = serde_json::from_str::<serde_json::Value>(&content) {
+                            if let (Some(package), Some(version)) = (
+                                cache_entry.get("package").and_then(|v| v.as_str()),
+                                cache_entry.get("version").and_then(|v| v.as_str())
+                            ) {
+                                pinned_packages.push(format!("{}@{}", package, version));
+                            }
+                        }
+                    }
+                }
+            }
+            
+            println!("  📦 Total entries: {}", total_entries);
+            println!("  💾 Total size: {} bytes", total_size);
+            println!("  📁 Cache directory: {}", cache_dir.display());
+            
+            if !pinned_packages.is_empty() {
+                println!("\n  🔒 Pinned packages:");
+                for package in pinned_packages {
+                    println!("    • {}", package);
+                }
+            } else {
+                println!("  📭 No pinned packages");
+            }
+        }
+    }
+    
+    Ok(())
+}
+
+async fn handle_promote(
+    artifact: PathBuf,
+    sign: bool,
+    key: Option<PathBuf>,
+    policy: magicrune_policy::PolicyConfig,
+) -> Result<()> {
+    println!("{}", "🎯 Promoting artifact...".cyan());
+    
+    if !artifact.exists() {
+        return Err(anyhow::anyhow!("Artifact not found: {}", artifact.display()));
+    }
+    
+    // Analyze the artifact first
+    println!("  🔍 Analyzing artifact...");
+    let artifact_content = fs::read_to_string(&artifact)
+        .with_context(|| format!("Failed to read artifact: {}", artifact.display()))?;
+    
+    // Check if it's a script or executable
+    let is_script = artifact.extension()
+        .and_then(|ext| ext.to_str())
+        .map(|ext| matches!(ext, "sh" | "py" | "js" | "ts" | "rb" | "go" | "rs"))
+        .unwrap_or(false);
+    
+    if is_script {
+        // Analyze the script content for security issues
+        let detections = magicrune_detector::analyze_command(&artifact_content)?;
+        let risk_score = calculate_risk_score(&detections);
+        
+        println!("  📊 Security Analysis:");
+        println!("    Risk Score: {}/100", risk_score);
+        
+        if risk_score > 50 {
+            println!("  {} High risk artifact - promotion requires review", "⚠".yellow());
+            if !prompt_user_confirmation(&detections)? {
+                println!("Promotion cancelled by user.");
+                return Ok(());
+            }
+        }
+    }
+    
+    // Create promoted artifact directory
+    let cache_dir = policy.cache.as_ref()
+        .map(|c| c.path.clone())
+        .unwrap_or_else(|| std::env::current_dir().unwrap().join(".magicrune/cache"));
+    let promoted_dir = cache_dir.join("promoted");
+    if !promoted_dir.exists() {
+        fs::create_dir_all(&promoted_dir)?;
+    }
+    
+    // Copy artifact to promoted directory
+    let artifact_name = artifact.file_name()
+        .ok_or_else(|| anyhow::anyhow!("Invalid artifact path"))?;
+    let promoted_path = promoted_dir.join(artifact_name);
+    
+    fs::copy(&artifact, &promoted_path)?;
+    println!("  {} Artifact promoted to: {}", "✓".green(), promoted_path.display());
+    
+    // Create metadata file
+    let metadata = serde_json::json!({
+        "original_path": artifact.display().to_string(),
+        "promoted_at": chrono::Utc::now().to_rfc3339(),
+        "promoted_by": "magicrune",
+        "analysis": {
+            "risk_score": if is_script { calculate_risk_score(&magicrune_detector::analyze_command(&artifact_content)?) } else { 0 },
+            "is_script": is_script
+        }
+    });
+    
+    let metadata_path = promoted_dir.join(format!("{}.metadata.json", artifact_name.to_string_lossy()));
+    fs::write(&metadata_path, serde_json::to_string_pretty(&metadata)?)?;
+    
+    // Sign the artifact if requested
+    if sign {
+        let key_path = key.ok_or_else(|| anyhow::anyhow!("--key is required when --sign is specified"))?;
+        
+        if !key_path.exists() {
+            return Err(anyhow::anyhow!("Key file not found: {}", key_path.display()));
+        }
+        
+        println!("  🔐 Signing promoted artifact...");
+        
+        // Determine signing algorithm based on key type
+        let key_content = fs::read_to_string(&key_path)?;
+        let algorithm = if key_content.contains("ssh-ed25519") {
+            "ssh-ed25519"
+        } else if key_content.contains("ssh-rsa") {
+            "ssh-rsa"
+        } else {
+            "gpg-rsa4096"
+        };
+        
+        match magicrune_sign::sign_artifact(&promoted_path, &key_path, algorithm) {
+            Ok(signature) => {
+                let signature_path = promoted_dir.join(format!("{}.sig", artifact_name.to_string_lossy()));
+                fs::write(&signature_path, signature)?;
+                println!("  {} Artifact signed: {}", "✓".green(), signature_path.display());
+            }
+            Err(e) => {
+                println!("  {} Failed to sign artifact: {}", "✗".red(), e);
+            }
+        }
+    }
+    
+    println!("\n{}", "🎉 Promotion completed successfully!".green().bold());
+    println!("  📁 Promoted artifact: {}", promoted_path.display());
+    
+    Ok(())
+}
+
 #[tokio::main]
 async fn main() -> Result<()> {
     let cli = Cli::parse();
@@ -840,13 +1098,13 @@ async fn main() -> Result<()> {
             handle_analyze(audit_log, format).await?;
         }
         Commands::Promote { artifact, sign, key } => {
-            todo!("Implement promote command");
+            handle_promote(artifact, sign, key, policy).await?;
         }
         Commands::Keys(key_cmd) => {
             handle_key_management(key_cmd, policy).await?;
         }
         Commands::Cache(cache_cmd) => {
-            todo!("Implement cache management");
+            handle_cache_management(cache_cmd, policy).await?;
         }
         Commands::CiScan { paths, enforce_external } => {
             handle_ci_scan(paths, enforce_external, policy).await?;
