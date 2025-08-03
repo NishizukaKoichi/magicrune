@@ -7,7 +7,7 @@ const https = require('https');
 const tar = require('tar');
 const ProgressBar = require('progress');
 
-const REPO = 'YOUR_USERNAME/magicrune';
+const REPO = 'NishizukaKoichi/magicrune';
 const VERSION = require('./package.json').version;
 
 function getPlatform() {

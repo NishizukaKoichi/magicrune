@@ -1,7 +1,7 @@
 {
   "name": "magicrune-cli",
-  "version": "0.1.0",
-  "description": "Policy-based sandbox for safe code execution",
+  "version": "0.2.0",
+  "description": "Complete security framework for safe execution of AI-generated and external code with risk analysis, signature verification, and sandbox isolation",
   "main": "index.js",
   "bin": {
     "magicrune": "./bin/magicrune.js"
@@ -15,7 +15,13 @@
     "sandbox",
     "code-execution",
     "ai-safety",
-    "cli"
+    "cli",
+    "risk-analysis",
+    "signature-verification",
+    "ci-cd",
+    "vulnerability-scanning",
+    "cache-management",
+    "artifact-promotion"
   ],
   "author": "MagicRune Team",
   "license": "MIT",
