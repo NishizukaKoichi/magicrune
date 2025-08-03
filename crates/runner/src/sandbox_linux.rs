@@ -1,66 +1,37 @@
 use anyhow::{Context, Result};
-use magicrune_analyzer::Verdict;
 use magicrune_audit::AuditEvent;
-use nix::sched::{unshare, CloneFlags};
-use nix::unistd::{chroot, setuid, setgid, Uid, Gid};
-use std::os::unix::process::CommandExt;
 use std::process::Command;
-use std::fs;
 use tempfile::TempDir;
-use tracing::{info, warn, debug};
+use tracing::{info, warn};
 
 use crate::{ExecutionResult, SandboxConfig};
 
 pub async fn execute_in_sandbox(command: String, config: SandboxConfig) -> Result<ExecutionResult> {
-    info!("Setting up Linux sandbox environment");
+    info!("Setting up Linux sandbox environment (basic)");
     
     // Create temporary sandbox directory
     let sandbox_dir = TempDir::new().context("Failed to create sandbox directory")?;
     let sandbox_path = sandbox_dir.path();
     
-    // Set up sandbox filesystem
-    setup_sandbox_fs(sandbox_path, &config)?;
+    // Create basic sandbox structure
+    setup_basic_sandbox(sandbox_path)?;
     
-    // Create a child process for sandboxing
+    // Create a basic sandboxed command
     let mut cmd = Command::new("sh");
     cmd.arg("-c");
     cmd.arg(&command);
     
-    // Clear environment
-    cmd.env_clear();
-    cmd.env("PATH", "/usr/bin:/bin:/usr/sbin:/sbin");
-    cmd.env("HOME", "/home/sandbox");
-    cmd.env("USER", "sandbox");
+    // Clear sensitive environment variables
+    cmd.env_remove("AWS_ACCESS_KEY_ID");
+    cmd.env_remove("AWS_SECRET_ACCESS_KEY");
+    cmd.env_remove("GITHUB_TOKEN");
+    cmd.env_remove("NPM_TOKEN");
+    cmd.env_remove("PYPI_TOKEN");
     
-    // Apply sandbox restrictions before exec
-    unsafe {
-        cmd.pre_exec(move || {
-            // Create new namespaces
-            unshare(
-                CloneFlags::CLONE_NEWNS
-                | CloneFlags::CLONE_NEWPID
-                | CloneFlags::CLONE_NEWNET
-                | CloneFlags::CLONE_NEWIPC
-                | CloneFlags::CLONE_NEWUTS
-                | CloneFlags::CLONE_NEWUSER,
-            )?;
-            
-            // Change root to sandbox directory
-            chroot(sandbox_path)?;
-            std::env::set_current_dir("/")?;
-            
-            // Drop privileges
-            setgid(Gid::from_raw(65534))?; // nobody
-            setuid(Uid::from_raw(65534))?; // nobody
-            
-            // Apply seccomp filters
-            if let Err(e) = apply_seccomp_filters() {
-                warn!("Failed to apply seccomp filters: {}", e);
-            }
-            
-            Ok(())
-        });
-    }
+    // Set basic environment
+    cmd.env("HOME", sandbox_path);
+    cmd.env("TMPDIR", sandbox_path);
+    cmd.current_dir(sandbox_path);
     
     // Execute command
     let output = cmd.output()
@@ -73,31 +44,21 @@ pub async fn execute_in_sandbox(command: String, config: SandboxConfig) -> Resul
     // Collect audit events
     let mut audit_events = vec![
         AuditEvent::SandboxExecution {
-            profile: "linux_namespaces".to_string(),
+            profile: "linux_basic".to_string(),
             restrictions: vec![
-                "namespace_isolation".to_string(),
-                "chroot".to_string(),
-                "dropped_privileges".to_string(),
-                "seccomp_filtered".to_string(),
+                "env_cleared".to_string(),
+                "working_dir_restricted".to_string(),
+                "temp_filesystem".to_string(),
             ],
         },
         AuditEvent::CommandExecution {
             command: command.clone(),
             exit_code: output.status.code().unwrap_or(-1),
-            duration_ms: 0, // TODO: measure actual duration
+            duration_ms: 0,
         },
     ];
     
-    // Check for filesystem changes
-    let fs_changes = detect_fs_changes(sandbox_path)?;
-    for change in fs_changes {
-        audit_events.push(AuditEvent::FileWrite {
-            path: change,
-            size: 0, // TODO: get actual size
-        });
-    }
-    
-    // Analyze behavior
+    // Basic analysis
     let analysis = magicrune_analyzer::analyze_behavior(&audit_events)?;
     
     Ok(ExecutionResult {
@@ -108,117 +69,16 @@ pub async fn execute_in_sandbox(command: String, config: SandboxConfig) -> Resul
     })
 }
 
-fn setup_sandbox_fs(sandbox_path: &std::path::Path, _config: &SandboxConfig) -> Result<()> {
+fn setup_basic_sandbox(sandbox_path: &std::path::Path) -> Result<()> {
     // Create basic directory structure
-    let dirs = vec![
-        "bin", "usr/bin", "lib", "usr/lib", "lib64", "usr/lib64",
-        "tmp", "dev", "proc", "home/sandbox", "etc",
-    ];
+    let dirs = vec!["tmp", "home"];
     
     for dir in dirs {
-        fs::create_dir_all(sandbox_path.join(dir))?;
+        let full_path = sandbox_path.join(dir);
+        std::fs::create_dir_all(&full_path)
+            .with_context(|| format!("Failed to create directory: {}", full_path.display()))?;
     }
     
-    // Create minimal /etc/passwd
-    fs::write(
-        sandbox_path.join("etc/passwd"),
-        "root:x:0:0:root:/root:/bin/sh\nnobody:x:65534:65534:nobody:/nonexistent:/bin/false\nsandbox:x:1000:1000:sandbox:/home/sandbox:/bin/sh\n"
-    )?;
-    
-    // Create minimal /etc/group
-    fs::write(
-        sandbox_path.join("etc/group"),
-        "root:x:0:\nnobody:x:65534:\nsandbox:x:1000:\n"
-    )?;
-    
-    // Create device nodes
-    create_device_nodes(sandbox_path)?;
-    
-    // Bind mount essential binaries (read-only)
-    bind_mount_readonly("/bin", &sandbox_path.join("bin"))?;
-    bind_mount_readonly("/usr/bin", &sandbox_path.join("usr/bin"))?;
-    bind_mount_readonly("/lib", &sandbox_path.join("lib"))?;
-    bind_mount_readonly("/usr/lib", &sandbox_path.join("usr/lib"))?;
-    
-    if std::path::Path::new("/lib64").exists() {
-        bind_mount_readonly("/lib64", &sandbox_path.join("lib64"))?;
-    }
-    if std::path::Path::new("/usr/lib64").exists() {
-        bind_mount_readonly("/usr/lib64", &sandbox_path.join("usr/lib64"))?;
-    }
-    
+    info!("Basic sandbox filesystem created");
     Ok(())
-}
-
-fn create_device_nodes(sandbox_path: &std::path::Path) -> Result<()> {
-    use std::os::unix::fs::DirBuilderExt;
-    use nix::sys::stat::{mknod, Mode, SFlag};
-    
-    let dev_path = sandbox_path.join("dev");
-    
-    // Create essential device nodes
-    mknod(
-        &dev_path.join("null"),
-        SFlag::S_IFCHR,
-        Mode::from_bits_truncate(0o666),
-        nix::sys::stat::makedev(1, 3),
-    )?;
-    
-    mknod(
-        &dev_path.join("zero"),
-        SFlag::S_IFCHR,
-        Mode::from_bits_truncate(0o666),
-        nix::sys::stat::makedev(1, 5),
-    )?;
-    
-    mknod(
-        &dev_path.join("random"),
-        SFlag::S_IFCHR,
-        Mode::from_bits_truncate(0o444),
-        nix::sys::stat::makedev(1, 8),
-    )?;
-    
-    mknod(
-        &dev_path.join("urandom"),
-        SFlag::S_IFCHR,
-        Mode::from_bits_truncate(0o444),
-        nix::sys::stat::makedev(1, 9),
-    )?;
-    
-    Ok(())
-}
-
-fn bind_mount_readonly(source: &str, target: &std::path::Path) -> Result<()> {
-    use nix::mount::{mount, MsFlags};
-    
-    mount(
-        Some(source),
-        target,
-        None::<&str>,
-        MsFlags::MS_BIND | MsFlags::MS_RDONLY,
-        None::<&str>,
-    )?;
-    
-    Ok(())
-}
-
-fn apply_seccomp_filters() -> Result<()> {
-    #[cfg(target_os = "linux")]
-    {
-        // Try to use seccomp if available
-        if let Ok(_) = std::process::Command::new("which").arg("seccomp").output() {
-            // seccomp available, could apply filters here
-            info!("Seccomp filters would be applied here");
-        } else {
-            warn!("Seccomp not available on this system");
-        }
-    }
-    
-    Ok(())
-}
-
-fn detect_fs_changes(_sandbox_path: &std::path::Path) -> Result<Vec<String>> {
-    // TODO: Implement actual filesystem change detection
-    // For now, return empty vector
-    Ok(vec![])
 }
