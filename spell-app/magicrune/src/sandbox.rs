@@ -1,6 +1,5 @@
 use anyhow::{Context, Result};
-use std::collections::HashMap;
-use std::path::{Path, PathBuf};
+use base64::Engine;
 use std::process::Stdio;
 use std::time::Duration;
 use tempfile::TempDir;
@@ -61,7 +60,8 @@ impl Sandbox {
 
     async fn prepare_filesystem(&self, request: &SpellRequest) -> Result<()> {
         for file in &request.files {
-            let content = base64::decode(&file.content_b64)
+            let content = base64::engine::general_purpose::STANDARD
+                .decode(&file.content_b64)
                 .context("Failed to decode base64 file content")?;
             
             let target_path = self.work_dir.path().join(file.path.trim_start_matches('/'));
@@ -119,38 +119,38 @@ impl Sandbox {
             stdin.shutdown().await?;
         }
         
-        let output_future = async {
-            let mut stdout = String::new();
-            let mut stderr = String::new();
-            
-            if let Some(mut stdout_reader) = child.stdout.take() {
-                let mut buf = vec![0u8; 1024 * 1024];
-                while let Ok(n) = stdout_reader.read(&mut buf).await {
-                    if n == 0 { break; }
-                    stdout.push_str(&String::from_utf8_lossy(&buf[..n]));
-                    if stdout.len() > 1024 * 1024 {
-                        break;
-                    }
+        let stdout = if let Some(mut reader) = child.stdout.take() {
+            let mut buf = vec![0u8; 1024 * 1024];
+            let mut output = String::new();
+            while let Ok(n) = reader.read(&mut buf).await {
+                if n == 0 { break; }
+                output.push_str(&String::from_utf8_lossy(&buf[..n]));
+                if output.len() > 1024 * 1024 {
+                    break;
                 }
             }
-            
-            if let Some(mut stderr_reader) = child.stderr.take() {
-                let mut buf = vec![0u8; 1024 * 1024];  
-                while let Ok(n) = stderr_reader.read(&mut buf).await {
-                    if n == 0 { break; }
-                    stderr.push_str(&String::from_utf8_lossy(&buf[..n]));
-                    if stderr.len() > 1024 * 1024 {
-                        break;
-                    }
+            output
+        } else {
+            String::new()
+        };
+
+        let stderr = if let Some(mut reader) = child.stderr.take() {
+            let mut buf = vec![0u8; 1024 * 1024];
+            let mut output = String::new();
+            while let Ok(n) = reader.read(&mut buf).await {
+                if n == 0 { break; }
+                output.push_str(&String::from_utf8_lossy(&buf[..n]));
+                if output.len() > 1024 * 1024 {
+                    break;
                 }
             }
-            
-            (stdout, stderr)
+            output
+        } else {
+            String::new()
         };
         
         let timeout_duration = Duration::from_secs(request.timeout_sec as u64);
         let result = timeout(timeout_duration, child.wait()).await;
-        let (stdout, stderr) = output_future.await;
         
         let exit_code = match result {
             Ok(Ok(status)) => status.code().unwrap_or(-1),

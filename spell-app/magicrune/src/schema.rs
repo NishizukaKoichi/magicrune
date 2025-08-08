@@ -79,7 +79,7 @@ pub struct AccessPolicy {
     pub allow: Vec<String>,
 }
 
-#[derive(Debug, Clone, Copy, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq)]
 #[serde(rename_all = "lowercase")]
 pub enum AccessDefault {
     Allow,
