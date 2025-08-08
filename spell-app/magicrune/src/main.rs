@@ -37,7 +37,7 @@ enum Commands {
         timeout: u32,
         
         #[arg(long, help = "Random seed for deterministic execution")]
-        seed: Option<u64>,
+        _seed: Option<u64>,
         
         #[arg(long, help = "Output JSON file (default: stdout)")]
         out: Option<PathBuf>,
@@ -64,8 +64,8 @@ async fn main() -> Result<()> {
     let cli = Cli::parse();
 
     match cli.command {
-        Commands::Exec { file, policy, timeout, seed, out, strict } => {
-            execute_cli(file, policy, timeout, seed, out, strict).await
+        Commands::Exec { file, policy, timeout, _seed, out, strict } => {
+            execute_cli(file, policy, timeout, _seed, out, strict).await
         }
         Commands::Serve { nats_url, db_path } => {
             serve_jetstream(nats_url, db_path).await
@@ -77,7 +77,7 @@ async fn execute_cli(
     file: PathBuf,
     policy_path: Option<PathBuf>,
     timeout: u32,
-    seed: Option<u64>,
+    _seed: Option<u64>,
     out: Option<PathBuf>,
     strict: bool,
 ) -> Result<()> {

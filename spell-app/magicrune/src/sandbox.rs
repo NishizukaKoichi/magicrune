@@ -6,9 +6,9 @@ use tempfile::TempDir;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::process::Command;
 use tokio::time::timeout;
-use tracing::{debug, info, warn};
-use wasmtime::{Config, Engine, Linker, Module, Store};
-use wasmtime_wasi::{WasiCtx, WasiCtxBuilder};
+use tracing::{info, warn};
+use wasmtime::{Config, Linker, Module, Store};
+use wasmtime_wasi::WasiCtxBuilder;
 
 use crate::schema::{FileInput, LogEntry, Policy, SpellRequest};
 
@@ -187,12 +187,12 @@ impl Sandbox {
     async fn execute_wasm(
         &self,
         request: &SpellRequest,
-        policy: &Policy,
+        _policy: &Policy,
     ) -> Result<SandboxResult> {
         let logs = Vec::new();
         
         let config = Config::new();
-        let engine = Engine::new(&config)?;
+        let engine = wasmtime::Engine::new(&config)?;
         let mut linker = Linker::new(&engine);
         wasmtime_wasi::add_to_linker(&mut linker, |s| s)?;
         
@@ -295,7 +295,7 @@ mod tests {
             files: vec![
                 FileInput {
                     path: "test.txt".to_string(),
-                    content_b64: base64::encode("Hello, world!"),
+                    content_b64: base64::engine::general_purpose::STANDARD.encode("Hello, world!"),
                 }
             ],
             policy_id: "default".to_string(),

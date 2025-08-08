@@ -1,5 +1,4 @@
 use crate::schema::{LogEntry, Policy, Verdict};
-use anyhow::Result;
 use std::collections::HashMap;
 
 pub struct Grader {
