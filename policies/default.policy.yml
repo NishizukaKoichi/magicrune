@@ -1,0 +1,34 @@
+version: 1
+capabilities:
+  fs:
+    default: deny
+    allow:
+      - path: "/tmp/**"
+      - path: "/workspace/**"
+    deny:
+      - path: "/etc/**"
+      - path: "/home/**/.ssh/**"
+      - path: "/root/**"
+  net:
+    default: deny
+    allow: []
+  process:
+    allow_fork: true
+    max_processes: 10
+limits:
+  cpu_ms: 5000
+  memory_mb: 512
+  wall_sec: 15
+  output_size_mb: 10
+grading:
+  thresholds:
+    green: "<=20"
+    yellow: "21..=60"
+    red: ">=61"
+  static_scores:
+    etc_write: 50
+    unauthorized_tcp: 40
+    ssh_key_read: 30
+    fork_bomb: 25
+    large_output: 15
+    suspicious_pattern: 20

@@ -1,0 +1,88 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "SpellResult",
+  "type": "object",
+  "required": [
+    "run_id",
+    "verdict",
+    "risk_score",
+    "exit_code",
+    "duration_ms",
+    "stdout",
+    "stderr",
+    "stdout_trunc",
+    "stderr_trunc",
+    "logs"
+  ],
+  "properties": {
+    "run_id": {
+      "type": "string",
+      "pattern": "^r_[0-9A-Z]{20,}$",
+      "description": "Unique run identifier"
+    },
+    "verdict": {
+      "type": "string",
+      "enum": ["green", "yellow", "red"],
+      "description": "Security verdict"
+    },
+    "risk_score": {
+      "type": "integer",
+      "minimum": 0,
+      "maximum": 100,
+      "description": "Risk assessment score"
+    },
+    "exit_code": {
+      "type": "integer",
+      "description": "Process exit code"
+    },
+    "duration_ms": {
+      "type": "integer",
+      "minimum": 0,
+      "description": "Execution duration in milliseconds"
+    },
+    "stdout": {
+      "type": "string",
+      "description": "Standard output (may be '[QUARANTINED]' for red verdicts)"
+    },
+    "stderr": {
+      "type": "string",
+      "description": "Standard error (may be '[QUARANTINED]' for red verdicts)"
+    },
+    "stdout_trunc": {
+      "type": "boolean",
+      "description": "Whether stdout was truncated"
+    },
+    "stderr_trunc": {
+      "type": "boolean",
+      "description": "Whether stderr was truncated"
+    },
+    "logs": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["timestamp", "event", "details"],
+        "properties": {
+          "timestamp": {
+            "type": "string",
+            "format": "date-time",
+            "description": "Event timestamp"
+          },
+          "event": {
+            "type": "string",
+            "description": "Event type"
+          },
+          "details": {
+            "type": "object",
+            "description": "Event-specific details"
+          }
+        }
+      },
+      "description": "Execution logs"
+    },
+    "sbom_attestation": {
+      "type": "string",
+      "format": "uri",
+      "description": "SBOM attestation URI"
+    }
+  }
+}

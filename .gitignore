@@ -1,0 +1,28 @@
+# Rust
+target/
+Cargo.lock
+*.rs.bk
+
+# Database
+*.db
+*.db-wal
+*.db-shm
+
+# Quarantine
+quarantine/
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Logs
+*.log
+
+# Test output
+test-output/

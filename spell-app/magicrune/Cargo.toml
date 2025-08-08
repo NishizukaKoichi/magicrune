@@ -1,0 +1,29 @@
+[package]
+name = "magicrune"
+version = "0.1.0"
+edition = "2021"
+rust-version = "1.80"
+
+[dependencies]
+tokio = { version = "1.47", features = ["full"] }
+async-nats = "0.37"
+async-trait = "0.1"
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+serde_yaml = "0.9"
+clap = { version = "4.5", features = ["derive"] }
+base64 = "0.22"
+sha2 = "0.10"
+anyhow = "1.0"
+thiserror = "2.0"
+wasmtime = "15.0"
+tempfile = "3.15"
+uuid = { version = "1.11", features = ["v7", "serde"] }
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+rusqlite = { version = "0.33", features = ["bundled"] }
+jsonschema = "0.26"
+chrono = { version = "0.4", features = ["serde"] }
+
+[dev-dependencies]
+tokio-test = "0.4"

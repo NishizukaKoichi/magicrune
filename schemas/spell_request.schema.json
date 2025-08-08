@@ -1,0 +1,74 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "SpellRequest",
+  "type": "object",
+  "required": ["cmd"],
+  "properties": {
+    "cmd": {
+      "type": "string",
+      "description": "Command to execute in the sandbox"
+    },
+    "stdin": {
+      "type": "string",
+      "default": "",
+      "description": "Standard input for the command"
+    },
+    "env": {
+      "type": "object",
+      "additionalProperties": {
+        "type": "string"
+      },
+      "default": {},
+      "description": "Environment variables"
+    },
+    "files": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["path", "content_b64"],
+        "properties": {
+          "path": {
+            "type": "string",
+            "pattern": "^/workspace/.*",
+            "description": "File path in the sandbox"
+          },
+          "content_b64": {
+            "type": "string",
+            "description": "Base64 encoded file content"
+          }
+        }
+      },
+      "default": [],
+      "description": "Files to create in the sandbox"
+    },
+    "policy_id": {
+      "type": "string",
+      "default": "default",
+      "description": "Policy identifier"
+    },
+    "timeout_sec": {
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 60,
+      "default": 15,
+      "description": "Execution timeout in seconds"
+    },
+    "allow_net": {
+      "type": "array",
+      "items": {
+        "type": "string",
+        "pattern": "^[a-zA-Z0-9.-]+:[0-9]+$"
+      },
+      "default": [],
+      "description": "Allowed network endpoints (host:port)"
+    },
+    "allow_fs": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      },
+      "default": [],
+      "description": "Additional allowed filesystem paths"
+    }
+  }
+}

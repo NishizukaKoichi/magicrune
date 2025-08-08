@@ -1,0 +1,70 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "SpellResult",
+  "type": "object",
+  "required": [
+    "run_id",
+    "verdict",
+    "risk_score",
+    "exit_code",
+    "duration_ms"
+  ],
+  "properties": {
+    "run_id": {
+      "type": "string",
+      "pattern": "^r_[0-9A-Z]{26}$",
+      "description": "Unique run identifier (ULID)"
+    },
+    "verdict": {
+      "type": "string",
+      "enum": ["green", "yellow", "red"],
+      "description": "Risk assessment verdict"
+    },
+    "risk_score": {
+      "type": "integer",
+      "minimum": 0,
+      "maximum": 100,
+      "description": "Numeric risk score"
+    },
+    "exit_code": {
+      "type": "integer",
+      "description": "Process exit code"
+    },
+    "duration_ms": {
+      "type": "integer",
+      "minimum": 0,
+      "description": "Execution duration in milliseconds"
+    },
+    "stdout": {
+      "type": "string",
+      "description": "Standard output (may be truncated)"
+    },
+    "stderr": {
+      "type": "string",
+      "description": "Standard error (may be truncated)"
+    },
+    "stdout_trunc": {
+      "type": "boolean",
+      "default": false,
+      "description": "Whether stdout was truncated"
+    },
+    "stderr_trunc": {
+      "type": "boolean",
+      "default": false,
+      "description": "Whether stderr was truncated"
+    },
+    "sbom_attestation": {
+      "type": "string",
+      "format": "uri",
+      "description": "SBOM attestation URI"
+    },
+    "error": {
+      "type": "string",
+      "description": "Error message if execution failed"
+    },
+    "quarantine_path": {
+      "type": "string",
+      "description": "Path to quarantined output (red verdict only)"
+    }
+  }
+}

@@ -1,0 +1,17 @@
+{
+  "cmd": "echo 'Hello, MagicRune!'",
+  "stdin": "",
+  "env": {
+    "USER": "test"
+  },
+  "files": [
+    {
+      "path": "/tmp/hello.txt",
+      "content_b64": "SGVsbG8sIFdvcmxkIQ=="
+    }
+  ],
+  "policy_id": "default",
+  "timeout_sec": 5,
+  "allow_net": [],
+  "allow_fs": ["/tmp"]
+}
