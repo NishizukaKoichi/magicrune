@@ -277,6 +277,7 @@ impl Sandbox {
 mod tests {
     use super::*;
     use crate::schema::*;
+    use std::collections::HashMap;
 
     #[tokio::test]
     async fn test_sandbox_creation() {
