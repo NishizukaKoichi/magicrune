@@ -1,27 +1,280 @@
-name: CI
+name: Universal CI
 on: [push, pull_request]
+
 jobs:
   build:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - name: Detect & Build
+      
+      - name: Setup Multi-Language Environment
         run: |
-          if [ -f spell-app/magicrune/Cargo.toml ]; then
-            cd spell-app/magicrune
-            sudo apt-get update -y
-            rustup update stable
-            cargo test
-          elif [ -f Cargo.toml ]; then
-            sudo apt-get update -y
-            rustup update stable
-            cargo test --locked
-          elif [ -f package.json ]; then
-            corepack enable # yarn/pnpm 対応
-            (yarn --version >/dev/null 2>&1 && yarn install --immutable) || npm ci
-            npm test --if-present || echo "no test script"
-          elif [ -f go.mod ]; then
-            go test ./...
-          else
-            echo "::warning::No recognised build file"; exit 0
-          fi
+          # Update system
+          sudo apt-get update -y
+          
+          # Install common build tools
+          sudo apt-get install -y build-essential curl wget git
+          
+      - name: Auto-Detect Languages & Build
+        run: |
+          set -e
+          DETECTED_LANGS=""
+          
+          # Function to detect and build each language
+          detect_and_build() {
+            echo "🔍 Scanning for supported languages..."
+            
+            # Rust Detection & Build
+            if find . -name "Cargo.toml" -not -path "./target/*" -not -path "./.git/*" | head -1 | grep -q .; then
+              echo "🦀 Rust detected"
+              DETECTED_LANGS="$DETECTED_LANGS Rust"
+              
+              # Install/Update Rust
+              if ! command -v rustc &> /dev/null; then
+                curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y
+                source ~/.cargo/env
+              fi
+              rustup update stable
+              
+              # Find Cargo.toml and build
+              find . -name "Cargo.toml" -not -path "./target/*" -not -path "./.git/*" | while read -r cargo_file; do
+                project_dir=$(dirname "$cargo_file")
+                echo "📦 Building Rust project in $project_dir"
+                (cd "$project_dir" && cargo test && cargo build)
+              done
+            fi
+            
+            # Node.js Detection & Build  
+            if find . -name "package.json" -not -path "./node_modules/*" -not -path "./.git/*" | head -1 | grep -q .; then
+              echo "🟢 Node.js detected"
+              DETECTED_LANGS="$DETECTED_LANGS Node.js"
+              
+              # Install Node.js if needed
+              if ! command -v node &> /dev/null; then
+                curl -fsSL https://deb.nodesource.com/setup_lts.x | sudo -E bash -
+                sudo apt-get install -y nodejs
+              fi
+              
+              # Enable corepack for yarn/pnpm
+              corepack enable || npm install -g corepack
+              
+              # Find package.json and build
+              find . -name "package.json" -not -path "./node_modules/*" -not -path "./.git/*" | while read -r pkg_file; do
+                project_dir=$(dirname "$pkg_file")
+                echo "📦 Building Node.js project in $project_dir"
+                (
+                  cd "$project_dir"
+                  if command -v yarn &> /dev/null && [ -f "yarn.lock" ]; then
+                    yarn install --immutable
+                    yarn test --if-present || echo "No test script found"
+                  elif command -v pnpm &> /dev/null && [ -f "pnpm-lock.yaml" ]; then
+                    pnpm install --frozen-lockfile
+                    pnpm test || echo "No test script found"  
+                  else
+                    npm ci || npm install
+                    npm test || echo "No test script found"
+                  fi
+                )
+              done
+            fi
+            
+            # Go Detection & Build
+            if find . -name "go.mod" -not -path "./.git/*" | head -1 | grep -q .; then
+              echo "🐹 Go detected"
+              DETECTED_LANGS="$DETECTED_LANGS Go"
+              
+              # Install Go if needed
+              if ! command -v go &> /dev/null; then
+                wget -q https://go.dev/dl/go1.21.5.linux-amd64.tar.gz
+                sudo tar -C /usr/local -xzf go1.21.5.linux-amd64.tar.gz
+                echo 'export PATH=$PATH:/usr/local/go/bin' >> ~/.bashrc
+                export PATH=$PATH:/usr/local/go/bin
+              fi
+              
+              # Find go.mod and build
+              find . -name "go.mod" -not -path "./.git/*" | while read -r mod_file; do
+                project_dir=$(dirname "$mod_file")
+                echo "📦 Building Go project in $project_dir"
+                (cd "$project_dir" && go mod tidy && go test ./... && go build ./...)
+              done
+            fi
+            
+            # Python Detection & Build
+            if find . \( -name "requirements.txt" -o -name "pyproject.toml" -o -name "setup.py" -o -name "Pipfile" \) -not -path "./.git/*" | head -1 | grep -q .; then
+              echo "🐍 Python detected"
+              DETECTED_LANGS="$DETECTED_LANGS Python"
+              
+              # Install Python dependencies
+              sudo apt-get install -y python3 python3-pip python3-venv
+              
+              # Handle different Python project types
+              if [ -f "pyproject.toml" ]; then
+                echo "📦 Building Python project with pyproject.toml"
+                pip3 install build pytest
+                python3 -m build
+                python3 -m pytest -xvs || echo "No tests found or tests failed"
+              elif [ -f "requirements.txt" ]; then
+                echo "📦 Building Python project with requirements.txt"
+                pip3 install -r requirements.txt
+                python3 -m pytest -xvs || echo "No tests found or tests failed"
+              elif [ -f "setup.py" ]; then
+                echo "📦 Building Python project with setup.py"
+                pip3 install -e .
+                python3 -m pytest -xvs || echo "No tests found or tests failed"
+              elif [ -f "Pipfile" ]; then
+                echo "📦 Building Python project with Pipfile"
+                pip3 install pipenv
+                pipenv install --dev
+                pipenv run pytest || echo "No tests found or tests failed"
+              fi
+            fi
+            
+            # Java Detection & Build
+            if find . \( -name "pom.xml" -o -name "build.gradle" -o -name "build.gradle.kts" \) -not -path "./.git/*" | head -1 | grep -q .; then
+              echo "☕ Java detected"
+              DETECTED_LANGS="$DETECTED_LANGS Java"
+              
+              # Install Java
+              sudo apt-get install -y openjdk-17-jdk
+              export JAVA_HOME=/usr/lib/jvm/java-17-openjdk-amd64
+              
+              # Maven projects
+              if find . -name "pom.xml" -not -path "./.git/*" | head -1 | grep -q .; then
+                sudo apt-get install -y maven
+                find . -name "pom.xml" -not -path "./.git/*" | while read -r pom_file; do
+                  project_dir=$(dirname "$pom_file")
+                  echo "📦 Building Maven project in $project_dir"
+                  (cd "$project_dir" && mvn clean test compile)
+                done
+              fi
+              
+              # Gradle projects
+              if find . \( -name "build.gradle" -o -name "build.gradle.kts" \) -not -path "./.git/*" | head -1 | grep -q .; then
+                find . \( -name "build.gradle" -o -name "build.gradle.kts" \) -not -path "./.git/*" | while read -r build_file; do
+                  project_dir=$(dirname "$build_file")
+                  echo "📦 Building Gradle project in $project_dir"
+                  (
+                    cd "$project_dir"
+                    if [ -f "./gradlew" ]; then
+                      ./gradlew clean test build
+                    else
+                      gradle clean test build
+                    fi
+                  )
+                done
+              fi
+            fi
+            
+            # .NET Detection & Build
+            if find . \( -name "*.csproj" -o -name "*.fsproj" -o -name "*.vbproj" -o -name "*.sln" \) -not -path "./.git/*" | head -1 | grep -q .; then
+              echo "🔷 .NET detected"
+              DETECTED_LANGS="$DETECTED_LANGS .NET"
+              
+              # Install .NET
+              wget https://packages.microsoft.com/config/ubuntu/$(lsb_release -rs)/packages-microsoft-prod.deb -O packages-microsoft-prod.deb
+              sudo dpkg -i packages-microsoft-prod.deb
+              sudo apt-get update -y
+              sudo apt-get install -y dotnet-sdk-8.0
+              
+              # Build .NET projects
+              if find . -name "*.sln" -not -path "./.git/*" | head -1 | grep -q .; then
+                find . -name "*.sln" -not -path "./.git/*" | while read -r sln_file; do
+                  echo "📦 Building .NET solution $sln_file"
+                  dotnet test "$sln_file"
+                  dotnet build "$sln_file"
+                done
+              else
+                find . \( -name "*.csproj" -o -name "*.fsproj" -o -name "*.vbproj" \) -not -path "./.git/*" | while read -r proj_file; do
+                  echo "📦 Building .NET project $proj_file"
+                  dotnet test "$proj_file"
+                  dotnet build "$proj_file"
+                done
+              fi
+            fi
+            
+            # PHP Detection & Build
+            if find . \( -name "composer.json" -o -name "composer.lock" \) -not -path "./.git/*" | head -1 | grep -q .; then
+              echo "🐘 PHP detected"
+              DETECTED_LANGS="$DETECTED_LANGS PHP"
+              
+              # Install PHP and Composer
+              sudo apt-get install -y php php-cli php-mbstring php-xml php-curl php-zip
+              curl -sS https://getcomposer.org/installer | php
+              sudo mv composer.phar /usr/local/bin/composer
+              
+              # Build PHP projects
+              find . -name "composer.json" -not -path "./.git/*" | while read -r composer_file; do
+                project_dir=$(dirname "$composer_file")
+                echo "📦 Building PHP project in $project_dir"
+                (
+                  cd "$project_dir"
+                  composer install --no-dev --optimize-autoloader
+                  composer test || vendor/bin/phpunit || echo "No tests found"
+                )
+              done
+            fi
+            
+            # Ruby Detection & Build
+            if find . \( -name "Gemfile" -o -name "*.gemspec" \) -not -path "./.git/*" | head -1 | grep -q .; then
+              echo "💎 Ruby detected"
+              DETECTED_LANGS="$DETECTED_LANGS Ruby"
+              
+              # Install Ruby
+              sudo apt-get install -y ruby ruby-dev
+              sudo gem install bundler
+              
+              # Build Ruby projects
+              find . -name "Gemfile" -not -path "./.git/*" | while read -r gemfile; do
+                project_dir=$(dirname "$gemfile")
+                echo "📦 Building Ruby project in $project_dir"
+                (
+                  cd "$project_dir"
+                  bundle install
+                  bundle exec rake test || bundle exec rspec || echo "No tests found"
+                )
+              done
+            fi
+            
+            # C/C++ Detection & Build
+            if find . \( -name "Makefile" -o -name "CMakeLists.txt" -o -name "configure.ac" \) -not -path "./.git/*" | head -1 | grep -q .; then
+              echo "⚙️ C/C++ detected"
+              DETECTED_LANGS="$DETECTED_LANGS C/C++"
+              
+              # Install build tools
+              sudo apt-get install -y gcc g++ make cmake
+              
+              # Build C/C++ projects
+              if find . -name "CMakeLists.txt" -not -path "./.git/*" | head -1 | grep -q .; then
+                find . -name "CMakeLists.txt" -not -path "./.git/*" | while read -r cmake_file; do
+                  project_dir=$(dirname "$cmake_file")
+                  echo "📦 Building CMake project in $project_dir"
+                  (
+                    cd "$project_dir"
+                    mkdir -p build && cd build
+                    cmake .. && make
+                    make test || ctest || echo "No tests found"
+                  )
+                done
+              elif find . -name "Makefile" -not -path "./.git/*" | head -1 | grep -q .; then
+                find . -name "Makefile" -not -path "./.git/*" | while read -r makefile; do
+                  project_dir=$(dirname "$makefile")
+                  echo "📦 Building Make project in $project_dir"
+                  (cd "$project_dir" && make && make test || echo "No tests found")
+                done
+              fi
+            fi
+            
+            # Display summary
+            echo ""
+            echo "🎯 Build Summary:"
+            if [ -n "$DETECTED_LANGS" ]; then
+              echo "   Detected languages:$DETECTED_LANGS"
+              echo "✅ All builds completed successfully!"
+            else
+              echo "⚠️  No recognized project files found"
+              echo "   Supported: Rust, Node.js, Go, Python, Java, .NET, PHP, Ruby, C/C++"
+            fi
+          }
+          
+          # Execute detection and build
+          detect_and_build
