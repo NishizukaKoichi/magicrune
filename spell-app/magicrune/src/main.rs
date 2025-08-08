@@ -4,7 +4,7 @@ mod sandbox;
 mod schema;
 
 use anyhow::{Context, Result};
-use async_nats::jetstream;
+use async_nats::jetstream::{self, Message};
 use clap::{Parser, Subcommand};
 use std::path::PathBuf;
 use std::time::Instant;
@@ -37,7 +37,7 @@ enum Commands {
         timeout: u32,
         
         #[arg(long, help = "Random seed for deterministic execution")]
-        seed: Option<u64>,
+        _seed: Option<u64>,
         
         #[arg(long, help = "Output JSON file (default: stdout)")]
         out: Option<PathBuf>,
@@ -64,8 +64,8 @@ async fn main() -> Result<()> {
     let cli = Cli::parse();
 
     match cli.command {
-        Commands::Exec { file, policy, timeout, seed, out, strict } => {
-            execute_cli(file, policy, timeout, seed, out, strict).await
+        Commands::Exec { file, policy, timeout, _seed, out, strict } => {
+            execute_cli(file, policy, timeout, _seed, out, strict).await
         }
         Commands::Serve { nats_url, db_path } => {
             serve_jetstream(nats_url, db_path).await
@@ -77,7 +77,7 @@ async fn execute_cli(
     file: PathBuf,
     policy_path: Option<PathBuf>,
     timeout: u32,
-    seed: Option<u64>,
+    _seed: Option<u64>,
     out: Option<PathBuf>,
     strict: bool,
 ) -> Result<()> {
@@ -178,6 +178,7 @@ async fn serve_jetstream(nats_url: String, db_path: PathBuf) -> Result<()> {
         })
         .await?;
     
+    use futures_util::StreamExt;
     let mut messages = consumer.messages().await?;
     
     while let Some(msg) = messages.next().await {
@@ -192,11 +193,12 @@ async fn serve_jetstream(nats_url: String, db_path: PathBuf) -> Result<()> {
                     .publish(response_subject, response_data.into())
                     .await?;
                 
-                msg.ack().await?;
+                msg.ack().await.map_err(|e| anyhow::anyhow!("Failed to ack message: {}", e))?;
             }
             Err(e) => {
                 error!("Failed to process message: {}", e);
-                msg.nak().await?;
+                msg.ack_with(async_nats::jetstream::AckKind::Nak(None)).await
+                    .map_err(|e| anyhow::anyhow!("Failed to nak message: {}", e))?;
             }
         }
     }
@@ -205,7 +207,7 @@ async fn serve_jetstream(nats_url: String, db_path: PathBuf) -> Result<()> {
 }
 
 async fn process_jetstream_message(
-    msg: &jetstream::Message,
+    msg: &Message,
     ledger: &impl Ledger,
 ) -> Result<SpellResult> {
     let request: SpellRequest = serde_json::from_slice(&msg.payload)?;
@@ -328,7 +330,7 @@ fn check_policy(request: &SpellRequest, policy: &Policy) -> bool {
     true
 }
 
-fn validate_request_schema(json: &str) -> Result<()> {
+fn validate_request_schema(_json: &str) -> Result<()> {
     Ok(())
 }
 

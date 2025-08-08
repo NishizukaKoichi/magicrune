@@ -1,0 +1,104 @@
+name: magicrune-ci
+on: [push, pull_request]
+
+env:
+  RUST_BACKTRACE: 1
+  CARGO_TERM_COLOR: always
+
+jobs:
+  build:
+    strategy:
+      matrix:
+        target: [x86_64-unknown-linux-musl, aarch64-unknown-linux-musl]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.target }}
+      
+      - uses: Swatinem/rust-cache@v2
+        with:
+          key: ${{ matrix.target }}
+      
+      - name: Install musl tools
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y musl-tools
+          if [ "${{ matrix.target }}" = "aarch64-unknown-linux-musl" ]; then
+            sudo apt-get install -y gcc-aarch64-linux-gnu
+          fi
+      
+      - name: Run tests
+        run: |
+          cd spell-app/magicrune
+          if [ "${{ matrix.target }}" = "x86_64-unknown-linux-musl" ]; then
+            cargo test --workspace --target ${{ matrix.target }}
+          else
+            echo "Skipping tests for cross-compilation target"
+          fi
+      
+      - name: Build release
+        run: |
+          cd spell-app/magicrune
+          cargo build --release --workspace --target ${{ matrix.target }}
+      
+      - name: Generate SBOM
+        run: |
+          cd spell-app/magicrune
+          curl -sSfL https://raw.githubusercontent.com/anchore/syft/main/install.sh | sh -s -- -b /tmp
+          /tmp/syft dir:. -o spdx-json > sbom.json
+      
+      - name: Sign SBOM (if release)
+        if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/')
+        run: |
+          echo "Cosign signing would happen here in production"
+          # In production, you would use:
+          # cosign sign-blob --yes sbom.json > sbom.json.sig
+      
+      - name: Upload artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: magicrune-${{ matrix.target }}
+          path: |
+            spell-app/magicrune/target/${{ matrix.target }}/release/magicrune
+            spell-app/magicrune/sbom.json
+  
+  lint:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy, rustfmt
+      
+      - uses: Swatinem/rust-cache@v2
+      
+      - name: Check formatting
+        run: |
+          cd spell-app/magicrune
+          cargo fmt -- --check
+      
+      - name: Run clippy
+        run: |
+          cd spell-app/magicrune
+          cargo clippy --all-targets --all-features -- -D warnings
+  
+  security:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      
+      - uses: dtolnay/rust-toolchain@stable
+      
+      - uses: Swatinem/rust-cache@v2
+      
+      - name: Install cargo-audit
+        run: cargo install cargo-audit
+      
+      - name: Run security audit
+        run: |
+          cd spell-app/magicrune
+          cargo audit
