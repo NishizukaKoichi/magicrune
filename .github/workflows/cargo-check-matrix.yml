@@ -31,9 +31,7 @@ jobs:
             os: macos-latest
           - target: wasm32-wasi
             os: ubuntu-latest
-            install: |
-              curl -sSf https://raw.githubusercontent.com/WasmEdge/WasmEdge/master/utils/install.sh | bash -s -- --version=0.14.1
-              rustup target add wasm32-wasi
+            install: rustup target add wasm32-wasi
           - target: wasm32-unknown-unknown
             os: ubuntu-latest
             install: rustup target add wasm32-unknown-unknown
