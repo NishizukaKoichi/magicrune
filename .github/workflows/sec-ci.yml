@@ -17,6 +17,8 @@ jobs:
     steps:
       - uses: actions/checkout@692973e3d937129bcbf40652eb9f2f61becf3332 # v4.1.7
       - uses: dtolnay/rust-toolchain@7b1c307e0dcbda6122208f10795a713336a9b35a # stable
+        with:
+          toolchain: stable
       - uses: Swatinem/rust-cache@82a92a6e8fbeee089604da2575dc567ae9ddeaab # v2.7.5
       
       - name: Install security tools
@@ -37,7 +39,7 @@ jobs:
         run: cargo deny check advisories licenses bans sources
       
       - name: Gitleaks scan
-        uses: gitleaks/gitleaks-action@4c7a9c606108c5296263080852cc0f5a2f51f470 # v2.3.9
+        uses: gitleaks/gitleaks-action@4c7a9c606108c5296263080852cc0f5a2f51f470 # v2.3.6
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           GITLEAKS_VERSION: v8.22.1

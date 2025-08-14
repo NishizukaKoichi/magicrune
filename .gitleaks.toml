@@ -3,6 +3,16 @@ title = "gitleaks config"
 [extend]
 useDefault = true
 
+[allowlist]
+description = "Global allow list"
+paths = [
+  "**/*.toml",
+  "**/*.lock",
+  "**/*.sum",
+  ".gitleaks.toml",
+  "deny.toml"
+]
+
 [[rules]]
 id = "generic-api-key"
 description = "Generic API Key"
