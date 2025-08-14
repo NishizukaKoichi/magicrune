@@ -1,0 +1,63 @@
+name: cargo-check-matrix
+on:
+  pull_request:
+  push:
+    branches: [ main ]
+
+permissions:
+  contents: read
+
+jobs:
+  cargo-check-matrix:
+    name: ci:cargo-check-${{ matrix.target }}
+    runs-on: ${{ matrix.os }}
+    permissions:
+      contents: read
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - target: x86_64-unknown-linux-gnu
+            os: ubuntu-latest
+          - target: x86_64-unknown-linux-musl
+            os: ubuntu-latest
+            install: sudo apt-get install -y musl-tools
+          - target: aarch64-unknown-linux-gnu
+            os: ubuntu-latest
+            install: sudo apt-get install -y gcc-aarch64-linux-gnu
+          - target: x86_64-apple-darwin
+            os: macos-latest
+          - target: aarch64-apple-darwin
+            os: macos-latest
+          - target: wasm32-wasi
+            os: ubuntu-latest
+            install: |
+              curl -sSf https://raw.githubusercontent.com/WasmEdge/WasmEdge/master/utils/install.sh | bash -s -- --version=0.14.1
+              rustup target add wasm32-wasi
+          - target: wasm32-unknown-unknown
+            os: ubuntu-latest
+            install: rustup target add wasm32-unknown-unknown
+    steps:
+      - uses: actions/checkout@692973e3d937129bcbf40652eb9f2f61becf3332 # v4.1.7
+      
+      - uses: dtolnay/rust-toolchain@7b1c307e0dcbda6122208f10795a713336a9b35a # stable
+        with:
+          targets: ${{ matrix.target }}
+      
+      - uses: Swatinem/rust-cache@82a92a6e8fbeee089604da2575dc567ae9ddeaab # v2.7.5
+        with:
+          key: ${{ matrix.target }}
+      
+      - name: Install dependencies
+        if: matrix.install
+        run: ${{ matrix.install }}
+      
+      - name: cargo check
+        run: |
+          if [[ "${{ matrix.target }}" == "wasm32-wasi" || "${{ matrix.target }}" == "wasm32-unknown-unknown" ]]; then
+            cargo check --target ${{ matrix.target }} --no-default-features
+          else
+            cargo check --target ${{ matrix.target }}
+          fi
+        env:
+          CARGO_TARGET_AARCH64_UNKNOWN_LINUX_GNU_LINKER: aarch64-linux-gnu-gcc
