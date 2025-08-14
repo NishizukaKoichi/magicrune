@@ -1,0 +1,34 @@
+version: '3.8'
+services:
+  nats:
+    image: nats:2.10-alpine
+    container_name: nats-server
+    ports:
+      - "4222:4222"
+      - "8222:8222"
+    command: ["-js", "-m", "8222"]
+    healthcheck:
+      test: ["CMD", "nc", "-z", "localhost", "4222"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+    networks:
+      - e2e-network
+
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: bootstrapped-app
+    depends_on:
+      nats:
+        condition: service_healthy
+    environment:
+      - NATS_URL=nats://nats:4222
+      - RUST_LOG=debug
+    networks:
+      - e2e-network
+
+networks:
+  e2e-network:
+    driver: bridge
