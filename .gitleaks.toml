@@ -10,7 +10,8 @@ paths = [
   "**/*.lock",
   "**/*.sum",
   ".gitleaks.toml",
-  "deny.toml"
+  "deny.toml",
+  ".cargo/config.toml"
 ]
 
 [[rules]]
