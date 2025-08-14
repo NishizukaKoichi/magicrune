@@ -43,6 +43,6 @@ jobs:
         run: cargo deny check advisories licenses bans sources
       
       - name: Gitleaks scan
-        uses: gitleaks/gitleaks-action@cb7149a9b57195b609d63e8518d7d9f021c5a538 # v2.3.2
+        uses: gitleaks/gitleaks-action@v2
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
