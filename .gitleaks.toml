@@ -6,12 +6,12 @@ useDefault = true
 [allowlist]
 description = "Global allow list"
 paths = [
-  "**/*.toml",
-  "**/*.lock",
-  "**/*.sum",
-  ".gitleaks.toml",
-  "deny.toml",
-  ".cargo/config.toml"
+  ".*\\.toml$",
+  ".*\\.lock$",
+  ".*\\.sum$",
+  "\\.gitleaks\\.toml$",
+  "deny\\.toml$",
+  "\\.cargo/config\\.toml$"
 ]
 
 [[rules]]
