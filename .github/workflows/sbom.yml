@@ -1,0 +1,65 @@
+name: sbom
+on:
+  push:
+    tags:
+      - 'v*'
+
+permissions:
+  contents: write
+  packages: read
+
+jobs:
+  sbom-generate:
+    name: release:sbom-generate
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      packages: read
+    steps:
+      - uses: actions/checkout@692973e3d937129bcbf40652eb9f2f61becf3332 # v4.1.7
+      
+      - name: Install Syft
+        uses: anchore/sbom-action/download-syft@55dc4ee22412511ee8c3142cbea40418e1caf560 # v0.17.8
+        with:
+          syft-version: v1.19.0
+      
+      - name: Generate SBOM for source
+        run: |
+          syft dir:. -o spdx-json > sbom-source.spdx.json
+          syft dir:. -o cyclonedx-json > sbom-source.cdx.json
+      
+      - name: Log in to GitHub Container Registry
+        uses: docker/login-action@9780b0c442fbb1117ed29e0efdff1e18412f7567 # v3.3.0
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      
+      - name: Wait for image build
+        run: |
+          # Wait for docker-buildx workflow to complete
+          sleep 120
+      
+      - name: Generate SBOM for container images
+        run: |
+          IMAGE_NAME="ghcr.io/${{ github.repository }}"
+          TAG="${GITHUB_REF#refs/tags/}"
+          
+          # Generate SBOM for each architecture
+          for arch in amd64 arm64; do
+            echo "Generating SBOM for $IMAGE_NAME:$TAG-$arch"
+            syft $IMAGE_NAME:$TAG@$(docker manifest inspect $IMAGE_NAME:$TAG | jq -r '.manifests[] | select(.platform.architecture == "'$arch'") | .digest') \
+              -o spdx-json > sbom-container-$arch.spdx.json || true
+          done
+          
+          # Also generate with docker sbom command if available
+          if command -v docker sbom >/dev/null 2>&1; then
+            docker sbom $IMAGE_NAME:$TAG -o sbom-docker.spdx.json || true
+          fi
+      
+      - name: Upload SBOMs as release assets
+        uses: softprops/action-gh-release@01570a1f39cb168c169c802c3bceb9e93fb10974 # v2.3.0
+        with:
+          files: |
+            sbom-*.json
+          fail_on_unmatched_files: false
