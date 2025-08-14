@@ -1,0 +1,35 @@
+title = "gitleaks config"
+
+[extend]
+useDefault = true
+
+[allowlist]
+description = "Global allow list"
+paths = [
+  ".*\\.toml$",
+  ".*\\.lock$",
+  ".*\\.sum$",
+  "\\.gitleaks\\.toml$",
+  "deny\\.toml$",
+  "\\.cargo/config\\.toml$"
+]
+
+[[rules]]
+id = "generic-api-key"
+description = "Generic API Key"
+regex = '''(?i)(api[_\-\s]?key|apikey)[[:space:]]*[=:][[:space:]]*['\"]?[a-zA-Z0-9\-_]{16,}['\"]?'''
+keywords = ["api", "key", "apikey"]
+
+[rules.allowlist]
+regexTarget = "match"
+regexes = ['''(YOUR_API_KEY|PLACEHOLDER|example|test|dummy|fake)''']
+
+[[rules]]
+id = "private-key"
+description = "Private Key"
+regex = '''(?i)(private[_\-\s]?key)[[:space:]]*[=:][[:space:]]*['\"]?[a-zA-Z0-9\-_]{16,}['\"]?'''
+keywords = ["private", "key"]
+
+[rules.allowlist]
+regexTarget = "match"
+regexes = ['''(test|example|dummy|fake|placeholder)''']
