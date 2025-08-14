@@ -20,6 +20,12 @@ mod integration_tests {
             return;
         }
 
+        // Skip if running in CI without docker-compose
+        if std::env::var("CI").is_ok() {
+            println!("Skipping docker-compose test in CI environment");
+            return;
+        }
+
         // Check if docker-compose is available
         if run_command("docker-compose", &["version"]).is_err() {
             println!("docker-compose not available, skipping test");

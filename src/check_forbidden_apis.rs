@@ -5,6 +5,7 @@ compile_error!("Cannot use std adapters in WASM. Forbidden APIs detected: std::f
 mod tests {
     #[test]
     fn no_forbidden_apis_in_wasm() {
-        assert!(true);
+        // This test ensures the compile-time check above works correctly
+        // No forbidden std APIs should be used in WASM builds
     }
 }

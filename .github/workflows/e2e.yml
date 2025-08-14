@@ -24,8 +24,13 @@ jobs:
       
       - name: Setup Docker Compose
         run: |
-          docker-compose version
-          docker version
+          echo "Checking Docker Compose availability..."
+          if command -v docker-compose >/dev/null 2>&1; then
+            docker-compose version
+            docker version
+          else
+            echo "docker-compose not available in CI environment"
+          fi
       
       - name: Run E2E tests (non-musl only)
         run: |
