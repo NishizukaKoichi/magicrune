@@ -1,0 +1,59 @@
+name: cosign
+on:
+  push:
+    tags:
+      - 'v*'
+
+permissions:
+  contents: read
+  packages: write
+  id-token: write  # For OIDC
+
+jobs:
+  cosign-sign:
+    name: release:cosign-sign
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+      id-token: write
+    steps:
+      - uses: actions/checkout@692973e3d937129bcbf40652eb9f2f61becf3332 # v4.1.7
+      
+      - name: Install cosign
+        uses: sigstore/cosign-installer@dc72c7d5c4d10cd6bcb8cf6e3fd625a9e5e537da # v3.7.0
+        with:
+          cosign-release: 'v2.4.1'
+      
+      - name: Log in to GitHub Container Registry
+        uses: docker/login-action@9780b0c442fbb1117ed29e0efdff1e18412f7567 # v3.3.0
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      
+      - name: Wait for image build
+        run: |
+          # Wait for docker-buildx workflow to complete
+          sleep 60
+      
+      - name: Sign container image
+        env:
+          COSIGN_EXPERIMENTAL: 1
+        run: |
+          # Get the image digest
+          IMAGE_NAME="ghcr.io/${{ github.repository }}"
+          TAG="${GITHUB_REF#refs/tags/}"
+          
+          # Sign all architectures
+          for arch in amd64 arm64; do
+            echo "Signing $IMAGE_NAME:$TAG for $arch"
+            cosign sign --yes \
+              --oidc-issuer https://token.actions.githubusercontent.com \
+              $IMAGE_NAME:$TAG@$(docker manifest inspect $IMAGE_NAME:$TAG | jq -r '.manifests[] | select(.platform.architecture == "'$arch'") | .digest') || true
+          done
+          
+          # Sign the multi-arch manifest
+          cosign sign --yes \
+            --oidc-issuer https://token.actions.githubusercontent.com \
+            $IMAGE_NAME:$TAG
