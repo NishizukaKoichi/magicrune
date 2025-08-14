@@ -1,0 +1,117 @@
+name: release
+on:
+  push:
+    tags:
+      - 'v*'
+
+permissions:
+  contents: write
+  packages: write
+
+jobs:
+  create-release:
+    name: release:create-release
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    outputs:
+      upload_url: ${{ steps.create_release.outputs.upload_url }}
+    steps:
+      - uses: actions/checkout@692973e3d937129bcbf40652eb9f2f61becf3332 # v4.1.7
+      
+      - name: Extract version
+        id: version
+        run: echo "VERSION=${GITHUB_REF#refs/tags/}" >> $GITHUB_OUTPUT
+      
+      - name: Create Release
+        id: create_release
+        uses: actions/create-release@v1
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          tag_name: ${{ steps.version.outputs.VERSION }}
+          release_name: Release ${{ steps.version.outputs.VERSION }}
+          draft: false
+          prerelease: false
+          body: |
+            ## Release ${{ steps.version.outputs.VERSION }}
+            
+            ### Container Images
+            - `ghcr.io/${{ github.repository }}:${{ steps.version.outputs.VERSION }}`
+            - Multi-arch support: linux/amd64, linux/arm64
+            - Signed with cosign (keyless OIDC)
+            
+            ### Artifacts
+            See attached SBOMs and binary releases below.
+            
+            ### Verification
+            ```bash
+            # Verify container signature
+            cosign verify --experimental ghcr.io/${{ github.repository }}:${{ steps.version.outputs.VERSION }}
+            
+            # Download and verify SBOM
+            syft ghcr.io/${{ github.repository }}:${{ steps.version.outputs.VERSION }} -o spdx-json
+            ```
+  
+  build-binaries:
+    name: release:build-${{ matrix.target }}
+    needs: create-release
+    runs-on: ${{ matrix.os }}
+    permissions:
+      contents: write
+    strategy:
+      matrix:
+        include:
+          - target: x86_64-unknown-linux-gnu
+            os: ubuntu-latest
+            artifact: bootstrapped-linux-amd64
+          - target: aarch64-unknown-linux-gnu
+            os: ubuntu-latest
+            artifact: bootstrapped-linux-arm64
+          - target: x86_64-apple-darwin
+            os: macos-latest
+            artifact: bootstrapped-darwin-amd64
+          - target: aarch64-apple-darwin
+            os: macos-latest
+            artifact: bootstrapped-darwin-arm64
+    steps:
+      - uses: actions/checkout@692973e3d937129bcbf40652eb9f2f61becf3332 # v4.1.7
+      
+      - uses: dtolnay/rust-toolchain@7b1c307e0dcbda6122208f10795a713336a9b35a # stable
+        with:
+          toolchain: stable
+          targets: ${{ matrix.target }}
+      
+      - name: Install cross-compilation tools
+        if: matrix.target == 'aarch64-unknown-linux-gnu'
+        run: sudo apt-get install -y gcc-aarch64-linux-gnu
+      
+      - name: Build release binary
+        run: |
+          cargo build --release --locked --target ${{ matrix.target }}
+          cp target/${{ matrix.target }}/release/bootstrapped ${{ matrix.artifact }}
+          
+      - name: Compress binary
+        run: |
+          tar -czf ${{ matrix.artifact }}.tar.gz ${{ matrix.artifact }}
+          sha256sum ${{ matrix.artifact }}.tar.gz > ${{ matrix.artifact }}.tar.gz.sha256
+      
+      - name: Upload Release Asset
+        uses: actions/upload-release-asset@v1
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          upload_url: ${{ needs.create-release.outputs.upload_url }}
+          asset_path: ./${{ matrix.artifact }}.tar.gz
+          asset_name: ${{ matrix.artifact }}.tar.gz
+          asset_content_type: application/gzip
+      
+      - name: Upload Checksum
+        uses: actions/upload-release-asset@v1
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          upload_url: ${{ needs.create-release.outputs.upload_url }}
+          asset_path: ./${{ matrix.artifact }}.tar.gz.sha256
+          asset_name: ${{ matrix.artifact }}.tar.gz.sha256
+          asset_content_type: text/plain
