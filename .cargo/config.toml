@@ -4,8 +4,8 @@ rustflags = ["-C", "target-feature=-crt-static"]
 [target.aarch64-unknown-linux-gnu]
 linker = "aarch64-linux-gnu-gcc"
 
-[target.wasm32-wasi]
-runner = "wasmedge"
+[target.wasm32-wasip1]
+runner = "wasmtime"
 
 [target.wasm32-unknown-unknown]
 rustflags = ["-C", "link-arg=--export-memory"]

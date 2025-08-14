@@ -12,10 +12,17 @@ mod integration_tests {
     }
 
     #[test]
+    #[ignore = "Requires Docker and docker-compose to be installed"]
     fn test_docker_compose_up_down() {
         // Skip if running in musl environment
         if cfg!(target_env = "musl") {
             println!("Skipping E2E test in musl environment");
+            return;
+        }
+
+        // Check if docker-compose is available
+        if run_command("docker-compose", &["version"]).is_err() {
+            println!("docker-compose not available, skipping test");
             return;
         }
 
