@@ -1,4 +1,4 @@
-use bootstrapped::sandbox::{detect_sandbox, SandboxKind};
+use magicrune::sandbox::{detect_sandbox, SandboxKind};
 
 #[test]
 fn default_is_wasi_on_non_linux_or_when_feature_disabled() {
@@ -11,4 +11,3 @@ fn linux_native_is_selected_when_enabled_on_linux() {
     #[cfg(all(target_os = "linux", feature = "linux_native"))]
     assert_eq!(detect_sandbox(), SandboxKind::Linux);
 }
-

@@ -4,10 +4,10 @@ use std::fs;
 use std::path::PathBuf;
 use std::time::Instant;
 
-use bootstrapped::schema::{PolicyDoc, SpellRequest, SpellResult};
-use bootstrapped::grader;
-use bootstrapped::jet;
-use bootstrapped::sandbox::{Executor, NativeSandbox, WasmSandbox};
+use magicrune::schema::{PolicyDoc, SpellRequest, SpellResult};
+use magicrune::grader;
+use magicrune::jet;
+use magicrune::sandbox::{Executor, NativeSandbox, WasmSandbox};
 
 #[derive(Parser, Debug)]
 #[command(name = "magicrune", version = "0.1.0")]

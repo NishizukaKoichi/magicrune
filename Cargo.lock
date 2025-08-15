@@ -235,31 +235,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "bootstrapped"
-version = "0.1.0"
-dependencies = [
- "anyhow",
- "async-nats",
- "async-trait",
- "base64 0.22.1",
- "cfg-if",
- "clap",
- "futures-util",
- "hex",
- "js-sys",
- "nix",
- "serde",
- "serde_json",
- "serde_yaml",
- "sha2",
- "thiserror 2.0.14",
- "tokio",
- "wasm-bindgen",
- "wasmtime",
- "wasmtime-wasi",
-]
-
-[[package]]
 name = "bumpalo"
 version = "3.19.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1364,6 +1339,31 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "b823e83b2affd8f40a9ee8c29dbc56404c1e34cd2710921f2801e2cf29527afa"
 dependencies = [
  "libc",
+]
+
+[[package]]
+name = "magicrune"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "async-nats",
+ "async-trait",
+ "base64 0.22.1",
+ "cfg-if",
+ "clap",
+ "futures-util",
+ "hex",
+ "js-sys",
+ "nix",
+ "serde",
+ "serde_json",
+ "serde_yaml",
+ "sha2",
+ "thiserror 2.0.14",
+ "tokio",
+ "wasm-bindgen",
+ "wasmtime",
+ "wasmtime-wasi",
 ]
 
 [[package]]
