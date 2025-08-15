@@ -70,7 +70,11 @@ pub async fn run(nats_url: &str) -> anyhow::Result<()> {
         let mut headers = HeaderMap::new();
         headers.append("Nats-Msg-Id", msg_id.clone());
         let subject = format!("run.res.{run_id}");
-        let _ = client.publish_with_headers(subject, headers, body.into()).await;
+        // Prefer JetStream publish with ack; fallback to core publish
+        match js.publish_with_headers(subject.clone(), headers, body.clone().into()).await {
+            Ok(_ack) => {}
+            Err(_e) => { let _ = client.publish(subject, body.into()).await; }
+        }
         // small yield to avoid busy loop
         tokio::time::sleep(Duration::from_millis(1)).await;
     }
