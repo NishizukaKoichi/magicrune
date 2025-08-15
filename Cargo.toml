@@ -26,6 +26,8 @@ tokio = { version = "1.47", features = ["rt-multi-thread","macros","process","ti
 async-nats = "0.39"
 anyhow = "1.0"
 futures-util = "0.3"
+wasmtime = "15"
+wasmtime-wasi = "15"
 
 
 [target.'cfg(target_arch = "wasm32")'.dependencies]
