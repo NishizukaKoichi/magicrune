@@ -1,0 +1,28 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "SpellRequest",
+  "type": "object",
+  "properties": {
+    "cmd": { "type": "string" },
+    "stdin": { "type": "string" },
+    "env": { "type": "object", "additionalProperties": true },
+    "files": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "path": { "type": "string" },
+          "content_b64": { "type": "string" }
+        },
+        "required": ["path", "content_b64"]
+      }
+    },
+    "policy_id": { "type": "string" },
+    "timeout_sec": { "type": "integer", "minimum": 0, "maximum": 60 },
+    "allow_net": { "type": "array", "items": { "type": "string" } },
+    "allow_fs": { "type": "array", "items": { "type": "string" } }
+  },
+  "required": ["cmd"],
+  "additionalProperties": true
+}
+

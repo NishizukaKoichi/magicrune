@@ -13,3 +13,5 @@ mod check_forbidden_apis;
 pub fn is_wasm() -> bool {
     cfg!(target_arch = "wasm32")
 }
+pub mod schema;
+pub mod grader;
