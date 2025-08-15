@@ -6,6 +6,7 @@ use std::time::Instant;
 
 use bootstrapped::schema::{PolicyDoc, SpellRequest, SpellResult};
 use bootstrapped::grader;
+use bootstrapped::jet;
 
 #[derive(Parser, Debug)]
 #[command(name = "magicrune", version = "0.1.0")]
@@ -29,6 +30,11 @@ enum Commands {
         out: Option<PathBuf>,
         #[arg(long = "strict")]
         strict: bool,
+    },
+    /// Run NATS JetStream consumer
+    Serve {
+        #[arg(long = "nats-url", default_value = "nats://127.0.0.1:4222")]
+        nats_url: String,
     },
 }
 
@@ -86,6 +92,20 @@ fn main() {
             }
 
             std::process::exit(result.exit_code);
+        }
+        Commands::Serve { nats_url } => {
+            // minimal runtime for async serve
+            let rt = tokio::runtime::Builder::new_current_thread()
+                .enable_all()
+                .build()
+                .expect("rt");
+            let code = rt.block_on(async move {
+                match jet::run(&nats_url).await {
+                    Ok(()) => 0,
+                    Err(e) => { eprintln!("serve error: {e}"); 4 }
+                }
+            });
+            std::process::exit(code);
         }
     }
 }

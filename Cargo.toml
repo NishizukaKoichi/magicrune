@@ -22,6 +22,10 @@ clap = { version = "4.5", features = ["derive"] }
 serde_yaml = "0.9"
 sha2 = "0.10"
 hex = "0.4"
+tokio = { version = "1.47", features = ["rt-multi-thread","macros","process","time"] }
+async-nats = "0.39"
+anyhow = "1.0"
+futures-util = "0.3"
 
 
 [target.'cfg(target_arch = "wasm32")'.dependencies]
