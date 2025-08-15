@@ -5,22 +5,43 @@ edition = "2021"
 license = "MIT OR Apache-2.0"
 description = "A bootstrapped Rust/WASM edge application"
 repository = "https://github.com/NishizukaKoichi/bootstrapped"
+default-run = "bootstrapped"
 
 [features]
-default = ["std"]
+# 既定は従来のstdに加えてWASIフォールバックも有効化
+default = ["std", "wasi_fallback"]
 std = []
 wasm = []
+# WASIフォールバック（CI安全）
+wasi_fallback = []
+# Linuxネイティブ隔離はオプトイン（ローカルLinuxのみ）
+linux_native = ["nix"]
 
 [dependencies]
 thiserror = "2.0"
 serde = { version = "1.0", features = ["derive"], default-features = false }
 serde_json = { version = "1.0", default-features = false, features = ["alloc"] }
 async-trait = "0.1"
+base64 = "0.22"
+clap = { version = "4.5", features = ["derive"] }
+serde_yaml = "0.9"
+sha2 = "0.10"
+hex = "0.4"
+tokio = { version = "1.47", features = ["rt-multi-thread","macros","process","time"] }
+async-nats = "0.39"
+anyhow = "1.0"
+futures-util = "0.3"
+wasmtime = "15"
+wasmtime-wasi = "15"
+cfg-if = "1.0"
+# linux_native 用：optional にしてCIから外す
+nix = { version = "0.29", optional = true, default-features = false, features = ["sched","mount","fs"] }
 
 
 [target.'cfg(target_arch = "wasm32")'.dependencies]
 wasm-bindgen = "0.2"
 js-sys = "0.3"
+
 
 [dev-dependencies]
 tokio = { version = "1.42", features = ["full"] }

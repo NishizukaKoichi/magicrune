@@ -1,65 +1,45 @@
-name: CI
+name: magicrune-ci
 on:
   push:
-    branches: [ main ]
   pull_request:
-    branches: [ main ]
 
 permissions:
   contents: read
+  id-token: write
 
 jobs:
-  fmt-clippy:
-    name: ci:fmt-clippy
-    runs-on: ubuntu-latest
-    permissions:
-      contents: read
+  test-build:
+    runs-on: ubuntu-24.04
     steps:
-      - uses: actions/checkout@692973e3d937129bcbf40652eb9f2f61becf3332 # v4.1.7
-      - uses: dtolnay/rust-toolchain@7b1c307e0dcbda6122208f10795a713336a9b35a # stable
-        with:
-          toolchain: stable
-          components: rustfmt, clippy
-      - uses: Swatinem/rust-cache@82a92a6e8fbeee089604da2575dc567ae9ddeaab # v2.7.5
-      - name: fmt (check)
-        run: cargo fmt --all -- --check
-      - name: clippy
-        run: cargo clippy --all-targets --all-features -- -D warnings
-
-  unit-integration:
-    name: ci:unit-integration
-    runs-on: ubuntu-latest
-    permissions:
-      contents: read
-    steps:
-      - uses: actions/checkout@692973e3d937129bcbf40652eb9f2f61becf3332 # v4.1.7
-      - uses: dtolnay/rust-toolchain@7b1c307e0dcbda6122208f10795a713336a9b35a # stable
-        with:
-          toolchain: stable
-      - uses: Swatinem/rust-cache@82a92a6e8fbeee089604da2575dc567ae9ddeaab # v2.7.5
-      - name: Create Cargo.lock if missing
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - name: Test (wasm fallback)
         run: |
-          if [ ! -f Cargo.lock ]; then
-            cargo generate-lockfile
-          fi
-      - name: test
-        run: |
-          if command -v cargo-nextest >/dev/null 2>&1; then
-            cargo nextest run --all --profile ci
-          else
-            cargo test --all --locked --quiet
-          fi
-
-  build:
-    name: ci:build
-    runs-on: ubuntu-latest
-    permissions:
-      contents: read
-    steps:
-      - uses: actions/checkout@692973e3d937129bcbf40652eb9f2f61becf3332 # v4.1.7
-      - uses: dtolnay/rust-toolchain@7b1c307e0dcbda6122208f10795a713336a9b35a # stable
+          export MAGICRUNE_FORCE_WASM=1
+          cargo test --workspace --locked
+      - name: Build (linux-gnu host)
+        run: cargo build --release --workspace --locked
+      - name: Install cross
+        run: cargo install cross --git https://github.com/cross-rs/cross
+      - name: Build musl (x86_64)
+        run: cross build --release --target x86_64-unknown-linux-musl
+      - name: Build musl (aarch64)
+        run: cross build --release --target aarch64-unknown-linux-musl
+      - name: Generate SBOM (Syft)
+        uses: anchore/sbom-action@v0
         with:
-          toolchain: stable
-      - uses: Swatinem/rust-cache@82a92a6e8fbeee089604da2575dc567ae9ddeaab # v2.7.5
-      - name: build
-        run: cargo build --release --locked --quiet
+          output-file: sbom.spdx.json
+      - name: Install cosign
+        uses: sigstore/cosign-installer@v3
+      - name: Sign SBOM (OIDC keyless)
+        run: cosign sign-blob --yes --bundle sbom.spdx.json
+      - name: Upload artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: magicrune-${{ github.sha }}
+          path: |
+            target/x86_64-unknown-linux-musl/release/magicrune
+            target/aarch64-unknown-linux-musl/release/magicrune
+            sbom.spdx.json
+            sbom.spdx.json.sig

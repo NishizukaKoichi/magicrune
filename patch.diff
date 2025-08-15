@@ -1,0 +1,10 @@
+*** Begin Patch
+*** Update File: Cargo.toml
+@@
+ tokio = { version = "1.47", features = ["rt-multi-thread","macros","process","time"] }
+ async-nats = "0.39"
+ anyhow = "1.0"
+ futures-util = "0.3"
++wasmtime = "15"
++wasmtime-wasi = "15"
+*** End Patch

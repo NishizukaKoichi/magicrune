@@ -1,0 +1,18 @@
+version: 1
+capabilities:
+  fs:
+    default: deny
+    allow:
+      - path: "/tmp/**"
+  net:
+    default: deny
+limits:
+  cpu_ms: 5000
+  memory_mb: 512
+  wall_sec: 15
+grading:
+  thresholds:
+    green: "<=20"
+    yellow: "21..=60"
+    red: ">=61"
+

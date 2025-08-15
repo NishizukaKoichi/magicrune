@@ -1,0 +1,25 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "SpellResult",
+  "type": "object",
+  "properties": {
+    "run_id": { "type": "string" },
+    "verdict": { "type": "string", "enum": ["green", "yellow", "red"] },
+    "risk_score": { "type": "integer", "minimum": 0 },
+    "exit_code": { "type": "integer" },
+    "duration_ms": { "type": "integer", "minimum": 0 },
+    "stdout_trunc": { "type": "boolean" },
+    "sbom_attestation": { "type": "string" }
+  },
+  "required": [
+    "run_id",
+    "verdict",
+    "risk_score",
+    "exit_code",
+    "duration_ms",
+    "stdout_trunc",
+    "sbom_attestation"
+  ],
+  "additionalProperties": true
+}
+
