@@ -7,6 +7,7 @@ use std::time::Instant;
 use bootstrapped::schema::{PolicyDoc, SpellRequest, SpellResult};
 use bootstrapped::grader;
 use bootstrapped::jet;
+use bootstrapped::sandbox::{Executor, NativeSandbox, WasmSandbox};
 
 #[derive(Parser, Debug)]
 #[command(name = "magicrune", version = "0.1.0")]
@@ -68,26 +69,13 @@ fn main() {
             let mut cmd_exit = 0;
             if outcome.verdict != "red" {
                 if let Some(cmd) = req.cmd.as_deref() {
-                    // very small and synchronous execution path
-                    #[allow(clippy::or_fun_call)]
-                    let shell = std::env::var("SHELL").unwrap_or("/bin/bash".to_string());
-                    let mut command = std::process::Command::new(shell);
-                    command.arg("-lc").arg(cmd);
-                    if let Some(stdin_s) = req.stdin.as_ref() {
-                        use std::io::Write;
-                        command.stdin(std::process::Stdio::piped());
-                        command.stdout(std::process::Stdio::piped());
-                        command.stderr(std::process::Stdio::piped());
-                        match command.spawn() {
-                            Ok(mut child) => {
-                                if let Some(mut i) = child.stdin.take() { let _ = i.write_all(stdin_s.as_bytes()); }
-                                let status = child.wait().expect("wait child");
-                                cmd_exit = status.code().unwrap_or(4);
-                            }
-                            Err(_e) => { cmd_exit = 4; }
-                        }
+                    let force_wasm = std::env::var("MAGICRUNE_FORCE_WASM").ok().map(|v| v == "1").unwrap_or(false);
+                    if force_wasm {
+                        let wasm = WasmSandbox;
+                        cmd_exit = wasm.exec(cmd, req.stdin.as_deref()).unwrap_or(4);
                     } else {
-                        match command.status() { Ok(s) => { cmd_exit = s.code().unwrap_or(4); }, Err(_e) => { cmd_exit = 4; } }
+                        let native = NativeSandbox;
+                        cmd_exit = native.exec(cmd, req.stdin.as_deref()).unwrap_or(4);
                     }
                 }
             }
