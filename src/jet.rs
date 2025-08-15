@@ -1,6 +1,7 @@
 use async_nats::jetstream::context::Context;
 use async_nats::{Client, HeaderMap};
 use futures_util::StreamExt;
+use std::collections::{HashSet, VecDeque};
 use sha2::{Digest, Sha256};
 use std::time::Duration;
 
@@ -13,12 +14,23 @@ pub async fn run(nats_url: &str) -> anyhow::Result<()> {
     let _js: Context = async_nats::jetstream::new(client.clone());
 
     let mut sub = client.subscribe("run.req.>").await?;
+    let mut seen: HashSet<String> = HashSet::new();
+    let mut order: VecDeque<String> = VecDeque::new();
+    const WINDOW: usize = 1024;
     while let Some(msg) = sub.next().await {
         // Compute Msg-Id = SHA-256(request)
         let mut hasher = Sha256::new();
         hasher.update(&msg.payload);
         let req_hash = hasher.finalize();
         let msg_id = hex::encode(req_hash);
+        if seen.contains(&msg_id) {
+            continue;
+        }
+        seen.insert(msg_id.clone());
+        order.push_back(msg_id.clone());
+        if order.len() > WINDOW {
+            if let Some(old) = order.pop_front() { let _ = seen.remove(&old); }
+        }
 
         // Parse request
         let req: SpellRequest = match serde_json::from_slice(&msg.payload) {

@@ -64,6 +64,34 @@ fn main() {
 
             let outcome = grader::grade(&req, &policy_doc);
 
+            // Optionally execute the command when not red
+            let mut cmd_exit = 0;
+            if outcome.verdict != "red" {
+                if let Some(cmd) = req.cmd.as_deref() {
+                    // very small and synchronous execution path
+                    #[allow(clippy::or_fun_call)]
+                    let shell = std::env::var("SHELL").unwrap_or("/bin/bash".to_string());
+                    let mut command = std::process::Command::new(shell);
+                    command.arg("-lc").arg(cmd);
+                    if let Some(stdin_s) = req.stdin.as_ref() {
+                        use std::io::Write;
+                        command.stdin(std::process::Stdio::piped());
+                        command.stdout(std::process::Stdio::piped());
+                        command.stderr(std::process::Stdio::piped());
+                        match command.spawn() {
+                            Ok(mut child) => {
+                                if let Some(mut i) = child.stdin.take() { let _ = i.write_all(stdin_s.as_bytes()); }
+                                let status = child.wait().expect("wait child");
+                                cmd_exit = status.code().unwrap_or(4);
+                            }
+                            Err(_e) => { cmd_exit = 4; }
+                        }
+                    } else {
+                        match command.status() { Ok(s) => { cmd_exit = s.code().unwrap_or(4); }, Err(_e) => { cmd_exit = 4; } }
+                    }
+                }
+            }
+
             // Deterministic run_id = sha256(request + seed)
             let mut hasher = Sha256::new();
             hasher.update(data.as_bytes());
@@ -76,7 +104,7 @@ fn main() {
                 run_id,
                 verdict: outcome.verdict.clone(),
                 risk_score: outcome.risk_score,
-                exit_code: match outcome.verdict.as_str() { "green" => 0, "yellow" => 10, "red" => 20, _ => 4 },
+                exit_code: if outcome.verdict == "green" { cmd_exit } else { match outcome.verdict.as_str() { "yellow" => 10, "red" => 20, _ => 4 } },
                 duration_ms: started.elapsed().as_millis() as u64,
                 stdout_trunc: false,
                 sbom_attestation: "file://sbom.spdx.json.sig".to_string(),
