@@ -67,7 +67,11 @@ fn main() {
 
             // Optionally execute the command when not red
             let mut cmd_exit = 0;
-            if outcome.verdict != "red" {
+            let mut policy_violation = false;
+            // simple policy enforcement: net must be empty; fs allow only /tmp/**
+            if let Some(nets) = &req.allow_net { if !nets.is_empty() { policy_violation = true; } }
+            if let Some(fs) = &req.allow_fs { if fs.iter().any(|p| p != "/tmp/**") { policy_violation = true; } }
+            if outcome.verdict != "red" && !policy_violation {
                 if let Some(cmd) = req.cmd.as_deref() {
                     let force_wasm = std::env::var("MAGICRUNE_FORCE_WASM").ok().map(|v| v == "1").unwrap_or(false);
                     if force_wasm {
@@ -92,7 +96,7 @@ fn main() {
                 run_id,
                 verdict: outcome.verdict.clone(),
                 risk_score: outcome.risk_score,
-                exit_code: if outcome.verdict == "green" { cmd_exit } else { match outcome.verdict.as_str() { "yellow" => 10, "red" => 20, _ => 4 } },
+                exit_code: if policy_violation { 3 } else if outcome.verdict == "green" { cmd_exit } else { match outcome.verdict.as_str() { "yellow" => 10, "red" => 20, _ => 4 } },
                 duration_ms: started.elapsed().as_millis() as u64,
                 stdout_trunc: false,
                 sbom_attestation: "file://sbom.spdx.json.sig".to_string(),

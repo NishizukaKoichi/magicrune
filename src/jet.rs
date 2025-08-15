@@ -55,11 +55,21 @@ pub async fn run(nats_url: &str) -> anyhow::Result<()> {
 
         // Deterministic run_id (reuse msg_id prefix)
         let run_id = format!("r_{}", &msg_id[..20]);
+        let policy_violation = req
+            .allow_net
+            .as_ref()
+            .map(|v| !v.is_empty())
+            .unwrap_or(false)
+            || req
+                .allow_fs
+                .as_ref()
+                .map(|v| v.iter().any(|p| p != "/tmp/**"))
+                .unwrap_or(false);
         let result = SpellResult {
             run_id: run_id.clone(),
             verdict: outcome.verdict.clone(),
             risk_score: outcome.risk_score,
-            exit_code: match outcome.verdict.as_str() { "green" => 0, "yellow" => 10, "red" => 20, _ => 4 },
+            exit_code: if policy_violation { 3 } else { match outcome.verdict.as_str() { "green" => 0, "yellow" => 10, "red" => 20, _ => 4 } },
             duration_ms: 0,
             stdout_trunc: false,
             sbom_attestation: "file://sbom.spdx.json.sig".to_string(),
