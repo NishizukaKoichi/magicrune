@@ -1,4 +1,5 @@
 use async_nats::jetstream::context::Context;
+use async_nats::jetstream::stream::Config as StreamConfig;
 use async_nats::{Client, HeaderMap};
 use futures_util::StreamExt;
 use std::collections::{HashSet, VecDeque};
@@ -11,7 +12,15 @@ use crate::schema::{PolicyDoc, SpellRequest, SpellResult};
 pub async fn run(nats_url: &str) -> anyhow::Result<()> {
     let client: Client = async_nats::connect(nats_url).await?;
     // JetStream context (optional best-effort)
-    let _js: Context = async_nats::jetstream::new(client.clone());
+    let js: Context = async_nats::jetstream::new(client.clone());
+    // Best-effort: ensure streams exist (ignore errors if permissions missing)
+    let _ = js
+        .get_or_create_stream(StreamConfig {
+            name: "magicrune".to_string(),
+            subjects: vec!["run.req.>".to_string(), "run.res.*".to_string()],
+            ..Default::default()
+        })
+        .await;
 
     let mut sub = client.subscribe("run.req.>").await?;
     let mut seen: HashSet<String> = HashSet::new();
