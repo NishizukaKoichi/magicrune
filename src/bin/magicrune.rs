@@ -97,7 +97,7 @@ fn main() {
                 verdict: outcome.verdict.clone(),
                 risk_score: outcome.risk_score,
                 exit_code: if policy_violation { 3 } else if outcome.verdict == "green" { cmd_exit } else { match outcome.verdict.as_str() { "yellow" => 10, "red" => 20, _ => 4 } },
-                duration_ms: started.elapsed().as_millis() as u64,
+                duration_ms: if req.seed.is_some() { 0 } else { started.elapsed().as_millis() as u64 },
                 stdout_trunc: false,
                 sbom_attestation: "file://sbom.spdx.json.sig".to_string(),
             };
