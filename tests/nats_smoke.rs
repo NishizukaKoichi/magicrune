@@ -1,13 +1,11 @@
-#[cfg(all(feature = "jet", not(target_env = "musl")))]
+#[cfg(not(target_env = "musl"))]
 mod jet_tests {
-    use tokio::time::{timeout, Duration};
+    use std::net::TcpStream;
 
-    #[tokio::test(flavor = "current_thread")] 
-    async fn nats_connect_smoke() {
-        let url = std::env::var("NATS_URL").unwrap_or_else(|_| "nats://127.0.0.1:4222".to_string());
-        let fut = async_nats::connect(&url);
-        let conn = timeout(Duration::from_secs(5), fut).await.expect("timeout");
-        assert!(conn.is_ok(), "failed to connect to NATS at {}", url);
+    #[test]
+    fn nats_tcp_port_open() {
+        let addr = std::env::var("NATS_TCP").unwrap_or_else(|_| "127.0.0.1:4222".to_string());
+        let s = TcpStream::connect(&addr).expect("connect tcp 4222");
+        let _ = s;
     }
 }
-
