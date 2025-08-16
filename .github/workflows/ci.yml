@@ -82,6 +82,12 @@ jobs:
             cargo build --release --workspace --target "${{ matrix.target }}" --locked
           fi
 
+      - name: Feature build (gnu only)
+        if: ${{ !contains(matrix.target, 'musl') }}
+        working-directory: ${{ steps.wd.outputs.value }}
+        run: |
+          cargo build --workspace --locked --features jet,wasm_exec --target "${{ matrix.target }}"
+
       - name: Install cargo-audit (lightweight)
         run: cargo install cargo-audit --locked --version 0.21.1
 

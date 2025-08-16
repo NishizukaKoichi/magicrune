@@ -27,3 +27,20 @@ pub async fn exec_wasm(_wasm_bytes: &[u8], _spec: &SandboxSpec) -> SandboxOutcom
     SandboxOutcome::empty()
 }
 
+// Optional Wasmtime wiring; compiled only when feature `wasm_exec` is enabled (CI).
+#[cfg(feature = "wasm_exec")]
+pub mod wasm_impl {
+    use super::{SandboxOutcome, SandboxSpec};
+    use wasmtime::{Config, Engine};
+
+    pub fn engine() -> Engine {
+        let mut cfg = Config::new();
+        cfg.consume_fuel(true);
+        Engine::new(&cfg).expect("engine")
+    }
+
+    pub async fn exec_bytes(_wasm_bytes: &[u8], _spec: &SandboxSpec) -> SandboxOutcome {
+        let _engine = engine();
+        SandboxOutcome::empty()
+    }
+}
