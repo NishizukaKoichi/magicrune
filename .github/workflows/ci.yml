@@ -44,6 +44,11 @@ jobs:
             echo "value=." >> "$GITHUB_OUTPUT"
           fi
 
+      - name: Generate lockfile (if outdated)
+        working-directory: ${{ steps.wd.outputs.value }}
+        run: |
+          cargo update -q || cargo generate-lockfile
+
       - name: Install Rust 1.80 toolchain
         shell: bash
         run: |
