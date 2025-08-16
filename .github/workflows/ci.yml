@@ -1,4 +1,5 @@
 name: magicrune-ci
+# trigger
 on:
   push:
   pull_request:
