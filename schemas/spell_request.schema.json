@@ -1,28 +1,21 @@
 {
-  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://example.com/schemas/spell_request.schema.json",
   "title": "SpellRequest",
   "type": "object",
+  "required": ["cmd", "stdin", "env", "files", "policy_id", "timeout_sec", "allow_net", "allow_fs"],
   "properties": {
     "cmd": { "type": "string" },
     "stdin": { "type": "string" },
-    "env": { "type": "object", "additionalProperties": true },
+    "env": { "type": "object", "additionalProperties": { "type": ["string", "number", "boolean"] } },
     "files": {
       "type": "array",
-      "items": {
-        "type": "object",
-        "properties": {
-          "path": { "type": "string" },
-          "content_b64": { "type": "string" }
-        },
-        "required": ["path", "content_b64"]
-      }
+      "items": { "type": "object", "required": ["path"], "properties": { "path": { "type": "string" }, "content_b64": { "type": "string" } } }
     },
     "policy_id": { "type": "string" },
     "timeout_sec": { "type": "integer", "minimum": 0, "maximum": 60 },
     "allow_net": { "type": "array", "items": { "type": "string" } },
     "allow_fs": { "type": "array", "items": { "type": "string" } }
-  },
-  "required": ["cmd"],
-  "additionalProperties": true
+  }
 }
 
