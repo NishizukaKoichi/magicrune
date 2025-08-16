@@ -13,7 +13,7 @@ default = ["std"]
 std = []
 wasm = []
 jet = ["dep:async-nats"]
-wasm_exec = ["dep:wasmtime", "dep:wasmtime-wasi"]
+wasm_exec = ["dep:wasmtime"]
 
 [dependencies]
 thiserror = "2.0"
@@ -22,7 +22,6 @@ serde_json = { version = "1.0", default-features = false, features = ["alloc"] }
 async-trait = "0.1"
 async-nats = { version = "0.39", optional = true }
 wasmtime = { version = "15", optional = true }
-wasmtime-wasi = { version = "15", optional = true }
 
 
 [target.'cfg(target_arch = "wasm32")'.dependencies]
