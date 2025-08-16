@@ -90,6 +90,13 @@ jobs:
         working-directory: ${{ steps.wd.outputs.value }}
         run: cargo test --test e2e -- --nocapture --test-threads=1
 
+      - name: Run Jet tests (non-musl, features)
+        if: ${{ !contains(matrix.target, 'musl') }}
+        working-directory: ${{ steps.wd.outputs.value }}
+        env:
+          NATS_URL: nats://127.0.0.1:4222
+        run: cargo test --features jet --test nats_smoke -- --nocapture --test-threads=1
+
       - name: Build release
         working-directory: ${{ steps.wd.outputs.value }}
         shell: bash
