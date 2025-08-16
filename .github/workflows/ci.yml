@@ -46,8 +46,10 @@ jobs:
       - name: Install Rust 1.80 toolchain
         shell: bash
         run: |
-          rustup toolchain install 1.80.0 --profile minimal --component rustfmt clippy
+          set -e
+          rustup toolchain install 1.80.0 --profile minimal
           rustup default 1.80.0
+          rustup component add rustfmt clippy --toolchain 1.80.0
           rustup target add "${{ matrix.target }}"
 
       - name: Pre-fetch
