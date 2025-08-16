@@ -13,6 +13,13 @@ env:
 jobs:
   test-build:
     runs-on: ubuntu-24.04
+    services:
+      nats:
+        image: nats:2.10-alpine
+        ports:
+          - 4222:4222
+        options: >-
+          --name nats
     strategy:
       fail-fast: false
       matrix:
@@ -46,6 +53,17 @@ jobs:
       - name: Pre-fetch
         working-directory: ${{ steps.wd.outputs.value }}
         run: cargo fetch --locked --quiet
+
+      - name: Wait for NATS (non-musl)
+        if: ${{ !contains(matrix.target, 'musl') }}
+        shell: bash
+        run: |
+          for i in {1..60}; do
+            (echo > /dev/tcp/127.0.0.1/4222) >/dev/null 2>&1 && exit 0 || true
+            sleep 1
+          done
+          echo "NATS port 4222 not ready" >&2
+          exit 1
 
       - name: Format & Clippy gates
         working-directory: ${{ steps.wd.outputs.value }}
