@@ -12,7 +12,11 @@ pub struct SandboxOutcome {
 
 impl SandboxOutcome {
     pub fn empty() -> Self {
-        Self { exit_code: 0, stdout: Vec::new(), stderr: Vec::new() }
+        Self {
+            exit_code: 0,
+            stdout: Vec::new(),
+            stderr: Vec::new(),
+        }
     }
 }
 

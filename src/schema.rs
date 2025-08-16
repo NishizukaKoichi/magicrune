@@ -41,4 +41,3 @@ pub struct PolicyDoc {
 pub struct GradingCfg {
     pub thresholds: GradingThresholds,
 }
-

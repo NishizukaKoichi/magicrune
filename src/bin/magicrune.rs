@@ -48,23 +48,19 @@ struct SpellResult {
 // Source: derived from FIPS PUB 180-4; implemented here to avoid extra deps.
 fn sha256_hex(input: &[u8]) -> String {
     const K: [u32; 64] = [
-        0x428a2f98, 0x71374491, 0xb5c0fbcf, 0xe9b5dba5, 0x3956c25b, 0x59f111f1, 0x923f82a4, 0xab1c5ed5,
-        0xd807aa98, 0x12835b01, 0x243185be, 0x550c7dc3, 0x72be5d74, 0x80deb1fe, 0x9bdc06a7, 0xc19bf174,
-        0xe49b69c1, 0xefbe4786, 0x0fc19dc6, 0x240ca1cc, 0x2de92c6f, 0x4a7484aa, 0x5cb0a9dc, 0x76f988da,
-        0x983e5152, 0xa831c66d, 0xb00327c8, 0xbf597fc7, 0xc6e00bf3, 0xd5a79147, 0x06ca6351, 0x14292967,
-        0x27b70a85, 0x2e1b2138, 0x4d2c6dfc, 0x53380d13, 0x650a7354, 0x766a0abb, 0x81c2c92e, 0x92722c85,
-        0xa2bfe8a1, 0xa81a664b, 0xc24b8b70, 0xc76c51a3, 0xd192e819, 0xd6990624, 0xf40e3585, 0x106aa070,
-        0x19a4c116, 0x1e376c08, 0x2748774c, 0x34b0bcb5, 0x391c0cb3, 0x4ed8aa4a, 0x5b9cca4f, 0x682e6ff3,
-        0x748f82ee, 0x78a5636f, 0x84c87814, 0x8cc70208, 0x90befffa, 0xa4506ceb, 0xbef9a3f7, 0xc67178f2,
+        0x428a2f98, 0x71374491, 0xb5c0fbcf, 0xe9b5dba5, 0x3956c25b, 0x59f111f1, 0x923f82a4,
+        0xab1c5ed5, 0xd807aa98, 0x12835b01, 0x243185be, 0x550c7dc3, 0x72be5d74, 0x80deb1fe,
+        0x9bdc06a7, 0xc19bf174, 0xe49b69c1, 0xefbe4786, 0x0fc19dc6, 0x240ca1cc, 0x2de92c6f,
+        0x4a7484aa, 0x5cb0a9dc, 0x76f988da, 0x983e5152, 0xa831c66d, 0xb00327c8, 0xbf597fc7,
+        0xc6e00bf3, 0xd5a79147, 0x06ca6351, 0x14292967, 0x27b70a85, 0x2e1b2138, 0x4d2c6dfc,
+        0x53380d13, 0x650a7354, 0x766a0abb, 0x81c2c92e, 0x92722c85, 0xa2bfe8a1, 0xa81a664b,
+        0xc24b8b70, 0xc76c51a3, 0xd192e819, 0xd6990624, 0xf40e3585, 0x106aa070, 0x19a4c116,
+        0x1e376c08, 0x2748774c, 0x34b0bcb5, 0x391c0cb3, 0x4ed8aa4a, 0x5b9cca4f, 0x682e6ff3,
+        0x748f82ee, 0x78a5636f, 0x84c87814, 0x8cc70208, 0x90befffa, 0xa4506ceb, 0xbef9a3f7,
+        0xc67178f2,
     ];
     let mut h: [u32; 8] = [
-        0x6a09e667,
-        0xbb67ae85,
-        0x3c6ef372,
-        0xa54ff53a,
-        0x510e527f,
-        0x9b05688c,
-        0x1f83d9ab,
+        0x6a09e667, 0xbb67ae85, 0x3c6ef372, 0xa54ff53a, 0x510e527f, 0x9b05688c, 0x1f83d9ab,
         0x5be0cd19,
     ];
     let bit_len = (input.len() as u64) * 8;
@@ -242,33 +238,101 @@ fn main() {
 
     if strict {
         // Manual structural validation aligned with schemas (no external crates)
-        fn is_string(v: &serde_json::Value) -> bool { matches!(v, serde_json::Value::String(_)) }
-        fn is_number(v: &serde_json::Value) -> bool { matches!(v, serde_json::Value::Number(_)) }
-        fn is_bool(v: &serde_json::Value) -> bool { matches!(v, serde_json::Value::Bool(_)) }
-        let required = ["cmd","stdin","env","files","policy_id","timeout_sec","allow_net","allow_fs"];
-        for k in required.iter() { if !req_val.get(*k).is_some() { eprintln!("schema: missing key: {}", k); std::process::exit(1); } }
-        if !is_string(&req_val["cmd"]) { eprintln!("schema: cmd must be string"); std::process::exit(1); }
-        if !is_string(&req_val["stdin"]) { eprintln!("schema: stdin must be string"); std::process::exit(1); }
-        if !req_val["env"].is_object() { eprintln!("schema: env must be object"); std::process::exit(1); }
-        for (_k, v) in req_val["env"].as_object().unwrap() { if !(is_string(v) || is_number(v) || is_bool(v)) { eprintln!("schema: env values must be string/number/bool"); std::process::exit(1); } }
-        if !req_val["files"].is_array() { eprintln!("schema: files must be array"); std::process::exit(1); }
-        for f in req_val["files"].as_array().unwrap() {
-            if !f.is_object() { eprintln!("schema: file entry must be object"); std::process::exit(1); }
-            if !f.get("path").map(|v| is_string(v)).unwrap_or(false) { eprintln!("schema: file.path must be string"); std::process::exit(1); }
-            if let Some(cb) = f.get("content_b64") { if !is_string(cb) { eprintln!("schema: file.content_b64 must be string"); std::process::exit(1); } }
+        fn is_string(v: &serde_json::Value) -> bool {
+            matches!(v, serde_json::Value::String(_))
         }
-        if !is_string(&req_val["policy_id"]) { eprintln!("schema: policy_id must be string"); std::process::exit(1); }
-        if !req_val["timeout_sec"].is_i64() && !req_val["timeout_sec"].is_u64() { eprintln!("schema: timeout_sec must be integer"); std::process::exit(1); }
-        let t = req_val["timeout_sec"].as_i64().unwrap_or_else(|| req_val["timeout_sec"].as_u64().unwrap_or(0) as i64);
-        if !(0..=60).contains(&t) { eprintln!("schema: timeout_sec must be 0..=60"); std::process::exit(1); }
-        if !req_val["allow_net"].is_array() { eprintln!("schema: allow_net must be array"); std::process::exit(1); }
-        if !req_val["allow_fs"].is_array() { eprintln!("schema: allow_fs must be array"); std::process::exit(1); }
+        fn is_number(v: &serde_json::Value) -> bool {
+            matches!(v, serde_json::Value::Number(_))
+        }
+        fn is_bool(v: &serde_json::Value) -> bool {
+            matches!(v, serde_json::Value::Bool(_))
+        }
+        let required = [
+            "cmd",
+            "stdin",
+            "env",
+            "files",
+            "policy_id",
+            "timeout_sec",
+            "allow_net",
+            "allow_fs",
+        ];
+        for k in required.iter() {
+            if !req_val.get(*k).is_some() {
+                eprintln!("schema: missing key: {}", k);
+                std::process::exit(1);
+            }
+        }
+        if !is_string(&req_val["cmd"]) {
+            eprintln!("schema: cmd must be string");
+            std::process::exit(1);
+        }
+        if !is_string(&req_val["stdin"]) {
+            eprintln!("schema: stdin must be string");
+            std::process::exit(1);
+        }
+        if !req_val["env"].is_object() {
+            eprintln!("schema: env must be object");
+            std::process::exit(1);
+        }
+        for (_k, v) in req_val["env"].as_object().unwrap() {
+            if !(is_string(v) || is_number(v) || is_bool(v)) {
+                eprintln!("schema: env values must be string/number/bool");
+                std::process::exit(1);
+            }
+        }
+        if !req_val["files"].is_array() {
+            eprintln!("schema: files must be array");
+            std::process::exit(1);
+        }
+        for f in req_val["files"].as_array().unwrap() {
+            if !f.is_object() {
+                eprintln!("schema: file entry must be object");
+                std::process::exit(1);
+            }
+            if !f.get("path").map(|v| is_string(v)).unwrap_or(false) {
+                eprintln!("schema: file.path must be string");
+                std::process::exit(1);
+            }
+            if let Some(cb) = f.get("content_b64") {
+                if !is_string(cb) {
+                    eprintln!("schema: file.content_b64 must be string");
+                    std::process::exit(1);
+                }
+            }
+        }
+        if !is_string(&req_val["policy_id"]) {
+            eprintln!("schema: policy_id must be string");
+            std::process::exit(1);
+        }
+        if !req_val["timeout_sec"].is_i64() && !req_val["timeout_sec"].is_u64() {
+            eprintln!("schema: timeout_sec must be integer");
+            std::process::exit(1);
+        }
+        let t = req_val["timeout_sec"]
+            .as_i64()
+            .unwrap_or_else(|| req_val["timeout_sec"].as_u64().unwrap_or(0) as i64);
+        if !(0..=60).contains(&t) {
+            eprintln!("schema: timeout_sec must be 0..=60");
+            std::process::exit(1);
+        }
+        if !req_val["allow_net"].is_array() {
+            eprintln!("schema: allow_net must be array");
+            std::process::exit(1);
+        }
+        if !req_val["allow_fs"].is_array() {
+            eprintln!("schema: allow_fs must be array");
+            std::process::exit(1);
+        }
     }
 
     // Deterministic run_id from request bytes + seed (SPEC: same request+seed => stable)
     let mut seed_buf = Vec::new();
-    if let Some(s) = _seed { seed_buf.extend_from_slice(&s.to_le_bytes()); }
-    let mut all = raw.clone(); all.extend_from_slice(&seed_buf);
+    if let Some(s) = _seed {
+        seed_buf.extend_from_slice(&s.to_le_bytes());
+    }
+    let mut all = raw.clone();
+    all.extend_from_slice(&seed_buf);
     let run_id = format!("r_{}", sha256_hex(&all));
 
     // Minimal static grading (SPEC thresholds):
@@ -276,7 +340,10 @@ fn main() {
     // - if cmd contains 'ssh' -> +30
     let cmd_l = req.cmd.to_lowercase();
     let mut risk_score: u32 = 0;
-    let net_intent = cmd_l.contains("curl ") || cmd_l.contains("wget ") || cmd_l.contains("http://") || cmd_l.contains("https://");
+    let net_intent = cmd_l.contains("curl ")
+        || cmd_l.contains("wget ")
+        || cmd_l.contains("http://")
+        || cmd_l.contains("https://");
     if net_intent && req.allow_net.is_empty() {
         risk_score += 40;
     }
@@ -315,14 +382,44 @@ fn main() {
     if strict {
         // Ensure required keys and types
         let out_val: serde_json::Value = serde_json::from_str(&out_json).unwrap();
-        let reqd = ["run_id","verdict","risk_score","exit_code","duration_ms","stdout_trunc"];
-        for k in reqd.iter() { if !out_val.get(*k).is_some() { eprintln!("output schema: missing {}", k); std::process::exit(2); } }
-        if !matches!(out_val["run_id"], serde_json::Value::String(_)) { eprintln!("output schema: run_id"); std::process::exit(2); }
-        if !matches!(out_val["verdict"], serde_json::Value::String(_)) { eprintln!("output schema: verdict"); std::process::exit(2); }
-        if !matches!(out_val["risk_score"], serde_json::Value::Number(_)) { eprintln!("output schema: risk_score"); std::process::exit(2); }
-        if !matches!(out_val["exit_code"], serde_json::Value::Number(_)) { eprintln!("output schema: exit_code"); std::process::exit(2); }
-        if !matches!(out_val["duration_ms"], serde_json::Value::Number(_)) { eprintln!("output schema: duration_ms"); std::process::exit(2); }
-        if !matches!(out_val["stdout_trunc"], serde_json::Value::Bool(_)) { eprintln!("output schema: stdout_trunc"); std::process::exit(2); }
+        let reqd = [
+            "run_id",
+            "verdict",
+            "risk_score",
+            "exit_code",
+            "duration_ms",
+            "stdout_trunc",
+        ];
+        for k in reqd.iter() {
+            if !out_val.get(*k).is_some() {
+                eprintln!("output schema: missing {}", k);
+                std::process::exit(2);
+            }
+        }
+        if !matches!(out_val["run_id"], serde_json::Value::String(_)) {
+            eprintln!("output schema: run_id");
+            std::process::exit(2);
+        }
+        if !matches!(out_val["verdict"], serde_json::Value::String(_)) {
+            eprintln!("output schema: verdict");
+            std::process::exit(2);
+        }
+        if !matches!(out_val["risk_score"], serde_json::Value::Number(_)) {
+            eprintln!("output schema: risk_score");
+            std::process::exit(2);
+        }
+        if !matches!(out_val["exit_code"], serde_json::Value::Number(_)) {
+            eprintln!("output schema: exit_code");
+            std::process::exit(2);
+        }
+        if !matches!(out_val["duration_ms"], serde_json::Value::Number(_)) {
+            eprintln!("output schema: duration_ms");
+            std::process::exit(2);
+        }
+        if !matches!(out_val["stdout_trunc"], serde_json::Value::Bool(_)) {
+            eprintln!("output schema: stdout_trunc");
+            std::process::exit(2);
+        }
     }
 
     if let Some(p) = out_path {

@@ -25,4 +25,3 @@ fn exec_ok_sample_returns_green_and_exit0() {
     let v: serde_json::Value = serde_json::from_str(&data).expect("valid json");
     assert_eq!(v["verdict"], "green");
 }
-
