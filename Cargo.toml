@@ -8,7 +8,7 @@ license = "MIT OR Apache-2.0"
 description = "A bootstrapped Rust/WASM edge application"
 repository = "https://github.com/NishizukaKoichi/bootstrapped"
 
-[[]bin]
+[[bin]]
 name = "bootstrapped"
 path = "src/main.rs"
 
