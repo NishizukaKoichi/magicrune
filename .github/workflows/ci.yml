@@ -97,6 +97,11 @@ jobs:
           NATS_URL: nats://127.0.0.1:4222
         run: cargo test --features jet --test nats_smoke -- --nocapture --test-threads=1
 
+      - name: Run Wasm tests (non-musl, features)
+        if: ${{ !contains(matrix.target, 'musl') }}
+        working-directory: ${{ steps.wd.outputs.value }}
+        run: cargo test --features wasm_exec --test wasm_smoke -- --nocapture --test-threads=1
+
       - name: Build release
         working-directory: ${{ steps.wd.outputs.value }}
         shell: bash
