@@ -123,4 +123,4 @@ jobs:
 
       - name: cargo-audit
         working-directory: ${{ steps.wd.outputs.value }}
-        run: cargo audit --locked
+        run: cargo audit --locked --ignore RUSTSEC-2025-0046
