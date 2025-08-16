@@ -5,41 +5,86 @@ on:
 
 permissions:
   contents: read
-  id-token: write
+
+env:
+  CARGO_TERM_COLOR: never
+  RUST_BACKTRACE: 1
 
 jobs:
   test-build:
     runs-on: ubuntu-24.04
+    strategy:
+      fail-fast: false
+      matrix:
+        target: ["x86_64-unknown-linux-gnu", "x86_64-unknown-linux-musl", "aarch64-unknown-linux-musl"]
     steps:
-      - uses: actions/checkout@v4
-      - uses: dtolnay/rust-toolchain@stable
-      - uses: Swatinem/rust-cache@v2
-      - name: Test (wasm fallback)
+      - name: Checkout (git)
+        shell: bash
         run: |
-          export MAGICRUNE_FORCE_WASM=1
-          cargo test --workspace --locked
-      - name: Build (linux-gnu host)
-        run: cargo build --release --workspace --locked
-      - name: Install cross
-        run: cargo install cross --git https://github.com/cross-rs/cross
-      - name: Build musl (x86_64)
-        run: cross build --release --target x86_64-unknown-linux-musl
-      - name: Build musl (aarch64)
-        run: cross build --release --target aarch64-unknown-linux-musl
-      - name: Generate SBOM (Syft)
-        uses: anchore/sbom-action@v0
-        with:
-          output-file: sbom.spdx.json
-      - name: Install cosign
-        uses: sigstore/cosign-installer@v3
-      - name: Sign SBOM (OIDC keyless)
-        run: cosign sign-blob --yes --bundle sbom.spdx.json
-      - name: Upload artifacts
-        uses: actions/upload-artifact@v4
-        with:
-          name: magicrune-${{ github.sha }}
-          path: |
-            target/x86_64-unknown-linux-musl/release/magicrune
-            target/aarch64-unknown-linux-musl/release/magicrune
-            sbom.spdx.json
-            sbom.spdx.json.sig
+          git init .
+          git remote add origin "${{ github.server_url }}/${{ github.repository }}.git"
+          git fetch --depth=1 origin "${{ github.sha }}"
+          git checkout --detach "${{ github.sha }}"
+
+      - id: wd
+        name: Resolve working directory
+        shell: bash
+        run: |
+          if [ -f spell-app/magicrune/Cargo.toml ]; then
+            echo "value=spell-app/magicrune" >> "$GITHUB_OUTPUT"
+          else
+            echo "value=." >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Install Rust 1.80 toolchain
+        shell: bash
+        run: |
+          rustup toolchain install 1.80.0 --profile minimal --component rustfmt clippy
+          rustup default 1.80.0
+          rustup target add "${{ matrix.target }}"
+
+      - name: Pre-fetch
+        working-directory: ${{ steps.wd.outputs.value }}
+        run: cargo fetch --locked --quiet
+
+      - name: Format & Clippy gates
+        working-directory: ${{ steps.wd.outputs.value }}
+        run: |
+          cargo fmt --all -- --check
+          cargo clippy --all-targets --all-features -- -D warnings
+
+      - name: Install cross (musl only)
+        if: contains(matrix.target, 'musl')
+        run: cargo install cross@0.2.5 --locked
+
+      - name: Run unit/integration tests
+        working-directory: ${{ steps.wd.outputs.value }}
+        shell: bash
+        run: |
+          if [[ "${{ matrix.target }}" == *"musl"* ]]; then
+            cross test --all-targets --workspace --target "${{ matrix.target }}" --locked --quiet
+          else
+            cargo test --all-targets --workspace --target "${{ matrix.target }}" --locked --quiet
+          fi
+
+      - name: Run E2E (non-musl only)
+        if: ${{ !contains(matrix.target, 'musl') }}
+        working-directory: ${{ steps.wd.outputs.value }}
+        run: cargo test --test e2e -- --nocapture --test-threads=1
+
+      - name: Build release
+        working-directory: ${{ steps.wd.outputs.value }}
+        shell: bash
+        run: |
+          if [[ "${{ matrix.target }}" == *"musl"* ]]; then
+            cross build --release --workspace --target "${{ matrix.target }}" --locked
+          else
+            cargo build --release --workspace --target "${{ matrix.target }}" --locked
+          fi
+
+      - name: Install cargo-audit (lightweight)
+        run: cargo install cargo-audit --locked --version 0.21.1
+
+      - name: cargo-audit
+        working-directory: ${{ steps.wd.outputs.value }}
+        run: cargo audit --locked
