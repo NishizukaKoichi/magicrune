@@ -32,6 +32,8 @@ jobs:
           if [ ! -f Cargo.lock ]; then
             cargo generate-lockfile
           fi
+      - name: Update lockfile (prune unused)
+        run: cargo update -q
       - name: cargo audit (ignore known advisories)
         run: cargo audit -D warnings --ignore RUSTSEC-2025-0046
       - name: cargo deny
