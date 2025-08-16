@@ -35,6 +35,10 @@ jobs:
         if: matrix.install
         run: ${{ matrix.install }}
       
+      - name: Generate lockfile (if outdated)
+        run: |
+          cargo update -q || cargo generate-lockfile
+      
       - name: cargo check
         run: |
           cargo check --target ${{ matrix.target }} --locked --quiet
