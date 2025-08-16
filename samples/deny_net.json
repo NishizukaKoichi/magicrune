@@ -1,11 +1,11 @@
 {
-  "cmd": "bash -lc 'echo net'",
+  "cmd": "curl https://example.com",
   "stdin": "",
   "env": {},
   "files": [],
   "policy_id": "default",
-  "timeout_sec": 10,
-  "allow_net": ["0.0.0.0/0"],
+  "timeout_sec": 15,
+  "allow_net": [],
   "allow_fs": []
 }
 

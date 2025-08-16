@@ -1,13 +1,11 @@
 {
-  "cmd": "bash -lc 'echo hello'",
+  "cmd": "echo hello",
   "stdin": "",
   "env": { "RUST_LOG": "info" },
-  "files": [
-    { "path": "/workspace/Cargo.toml", "content_b64": "Li4u" }
-  ],
+  "files": [],
   "policy_id": "default",
   "timeout_sec": 15,
   "allow_net": [],
-  "allow_fs": ["/tmp/**"]
+  "allow_fs": []
 }
 
