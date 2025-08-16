@@ -1,4 +1,4 @@
-use magicrune::sandbox::{detect_sandbox, SandboxKind};
+use bootstrapped::sandbox::{detect_sandbox, SandboxKind};
 
 #[test]
 fn default_is_wasi_on_non_linux_or_when_feature_disabled() {

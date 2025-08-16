@@ -260,7 +260,7 @@ fn main() {
             "allow_fs",
         ];
         for k in required.iter() {
-            if !req_val.get(*k).is_some() {
+            if req_val.get(*k).is_none() {
                 eprintln!("schema: missing key: {}", k);
                 std::process::exit(1);
             }
@@ -292,7 +292,7 @@ fn main() {
                 eprintln!("schema: file entry must be object");
                 std::process::exit(1);
             }
-            if !f.get("path").map(|v| is_string(v)).unwrap_or(false) {
+            if !f.get("path").map(is_string).unwrap_or(false) {
                 eprintln!("schema: file.path must be string");
                 std::process::exit(1);
             }
