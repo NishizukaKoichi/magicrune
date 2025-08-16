@@ -30,25 +30,34 @@ pub async fn publish_result(_subject: &str, _bytes: &[u8]) -> JsResult<()> {
 #[cfg(feature = "jet")]
 pub mod jet_impl {
     use async_nats::Client;
+    use std::error::Error as StdError;
 
-    pub async fn connect(url: &str) -> Result<Client, async_nats::ConnectError> {
-        async_nats::connect(url).await
+    pub async fn connect(url: &str) -> Result<Client, Box<dyn StdError + Send + Sync>> {
+        async_nats::connect(url)
+            .await
+            .map_err(|e| Box::new(e) as Box<dyn StdError + Send + Sync>)
     }
 
     pub async fn publish_req(
         nc: &Client,
         subject: &str,
         req: &[u8],
-    ) -> Result<(), async_nats::Error> {
+    ) -> Result<(), Box<dyn StdError + Send + Sync>> {
         // NOTE: Dedup header (Nats-Msg-Id) will be added in a later step if needed.
-        nc.publish(subject.to_string(), req.to_vec()).await
+        nc.publish(subject.to_string(), req.to_vec().into())
+            .await
+            .map_err(|e| Box::new(e) as Box<dyn StdError + Send + Sync>)?;
+        Ok(())
     }
 
     pub async fn publish_res(
         nc: &Client,
         subject: &str,
         res: &[u8],
-    ) -> Result<(), async_nats::Error> {
-        nc.publish(subject.to_string(), res.to_vec()).await
+    ) -> Result<(), Box<dyn StdError + Send + Sync>> {
+        nc.publish(subject.to_string(), res.to_vec().into())
+            .await
+            .map_err(|e| Box::new(e) as Box<dyn StdError + Send + Sync>)?;
+        Ok(())
     }
 }
