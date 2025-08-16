@@ -6,6 +6,7 @@ use std::path::Path;
 use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Deserialize)]
+#[allow(dead_code)]
 struct SpellRequest {
     #[serde(default)]
     cmd: String,
@@ -26,6 +27,7 @@ struct SpellRequest {
 }
 
 #[derive(Debug, Deserialize)]
+#[allow(dead_code)]
 struct FileEntry {
     path: String,
     #[serde(default)]
