@@ -2,6 +2,7 @@ use std::env;
 use std::fs;
 use std::io::{self, Write};
 use std::path::Path;
+use std::str::FromStr;
 
 use serde::{Deserialize, Serialize};
 
@@ -141,6 +142,81 @@ fn print_usage() {
     );
 }
 
+#[derive(Debug, Clone)]
+struct Thresholds {
+    green: String,
+    yellow: String,
+    red: String,
+}
+
+impl Default for Thresholds {
+    fn default() -> Self {
+        Self {
+            green: "<=20".to_string(),
+            yellow: "21..=60".to_string(),
+            red: ">=61".to_string(),
+        }
+    }
+}
+
+// Minimal YAML value extractor (line-oriented). Assumes keys are unique.
+fn extract_yaml_scalar(content: &str, key: &str) -> Option<String> {
+    for line in content.lines() {
+        let trimmed = line.trim();
+        if let Some(rest0) = trimmed.strip_prefix(key) {
+            let rest = rest0.trim();
+            let val = rest.trim_start_matches(':').trim();
+            return Some(val.trim_matches('"').to_string());
+        }
+    }
+    None
+}
+
+fn load_thresholds_from_policy(path: &str) -> Thresholds {
+    let text = match std::fs::read_to_string(path) {
+        Ok(s) => s,
+        Err(_) => return Thresholds::default(),
+    };
+    // Try to find explicit grading.thresholds entries
+    // Fall back to defaults if missing.
+    let green = extract_yaml_scalar(&text, "green").unwrap_or_else(|| "<=20".to_string());
+    let yellow = extract_yaml_scalar(&text, "yellow").unwrap_or_else(|| "21..=60".to_string());
+    let red = extract_yaml_scalar(&text, "red").unwrap_or_else(|| ">=61".to_string());
+    Thresholds { green, yellow, red }
+}
+
+// Parse range expressions like "<=20", "21..=60", ">=61" and decide verdict.
+fn decide_verdict_from_thresholds(score: u32, th: &Thresholds) -> &'static str {
+    fn matches(expr: &str, n: u32) -> bool {
+        let e = expr.trim();
+        if let Some(rest) = e.strip_prefix("<=") {
+            if let Ok(v) = u32::from_str(rest.trim()) {
+                return n <= v;
+            }
+        }
+        if let Some(rest) = e.strip_prefix(">=") {
+            if let Ok(v) = u32::from_str(rest.trim()) {
+                return n >= v;
+            }
+        }
+        if let Some((a, b)) = e.split_once("..=") {
+            if let (Ok(x), Ok(y)) = (u32::from_str(a.trim()), u32::from_str(b.trim())) {
+                return n >= x && n <= y;
+            }
+        }
+        false
+    }
+    // Touch `red` to avoid dead-code on the field when thresholds default is used
+    let _ = &th.red;
+    if matches(&th.green, score) {
+        "green"
+    } else if matches(&th.yellow, score) {
+        "yellow"
+    } else {
+        "red"
+    }
+}
+
 fn main() {
     let args = env::args().skip(1).collect::<Vec<String>>();
     if args.is_empty() || args[0] == "-h" || args[0] == "--help" {
@@ -162,7 +238,7 @@ fn main() {
     // Defaults
     let mut in_path: Option<String> = None;
     let mut out_path: Option<String> = None;
-    let mut _policy_path: Option<String> = None; // accepted but not enforced here
+    let mut _policy_path: Option<String> = None; // default: policies/default.policy.yml
     let mut _timeout: Option<u64> = None; // accepted but not enforced here
     let mut _seed: Option<u64> = None;
     let mut strict = false;
@@ -337,7 +413,7 @@ fn main() {
     all.extend_from_slice(&seed_buf);
     let run_id = format!("r_{}", sha256_hex(&all));
 
-    // Minimal static grading (SPEC thresholds):
+    // Minimal static grading (policy thresholds aware):
     // - if cmd suggests network and allow_net empty -> +40 (yellow)
     // - if cmd contains 'ssh' -> +30
     let cmd_l = req.cmd.to_lowercase();
@@ -353,14 +429,12 @@ fn main() {
         risk_score += 30;
     }
 
-    // Verdict mapping
-    let verdict = if risk_score <= 20 {
-        "green"
-    } else if risk_score <= 60 {
-        "yellow"
-    } else {
-        "red"
-    };
+    // Load thresholds from policy (if available)
+    let policy_path = _policy_path
+        .or_else(|| std::env::var("MAGICRUNE_POLICY").ok())
+        .unwrap_or_else(|| "policies/default.policy.yml".to_string());
+    let thresholds = load_thresholds_from_policy(&policy_path);
+    let verdict = decide_verdict_from_thresholds(risk_score, &thresholds);
 
     // Exit code mapping
     let exit_code = match verdict {
