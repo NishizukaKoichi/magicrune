@@ -18,4 +18,3 @@ async fn main() -> anyhow::Result<()> {
 fn main() {
     eprintln!("jet feature not enabled");
 }
-

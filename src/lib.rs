@@ -15,6 +15,6 @@ pub fn is_wasm() -> bool {
 }
 pub mod grader;
 pub mod jet;
+pub mod ledger;
 pub mod sandbox;
 pub mod schema;
-pub mod ledger;

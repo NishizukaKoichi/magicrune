@@ -37,9 +37,9 @@ pub async fn publish_result(_subject: &str, _bytes: &[u8]) -> JsResult<()> {
 // Optional async-nats implementation; compiled only when feature `jet` is enabled (CI).
 #[cfg(feature = "jet")]
 pub mod jet_impl {
+    use super::compute_msg_id;
     use async_nats::Client;
     use std::error::Error as StdError;
-    use super::compute_msg_id;
 
     pub async fn connect(url: &str) -> Result<Client, Box<dyn StdError + Send + Sync>> {
         async_nats::connect(url)
@@ -54,8 +54,10 @@ pub mod jet_impl {
     ) -> Result<(), Box<dyn StdError + Send + Sync>> {
         let mut msg = async_nats::Message::new(subject, req.to_vec());
         let id = compute_msg_id(req);
-        msg.headers_mut()
-            .insert("Nats-Msg-Id", async_nats::header::HeaderValue::from_str(&id).unwrap());
+        msg.headers_mut().insert(
+            "Nats-Msg-Id",
+            async_nats::header::HeaderValue::from_str(&id).unwrap(),
+        );
         nc.publish_message(msg)
             .await
             .map_err(|e| Box::new(e) as Box<dyn StdError + Send + Sync>)?;

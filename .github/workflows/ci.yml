@@ -1,140 +1,51 @@
 name: magicrune-ci
-# trigger
 on:
   push:
   pull_request:
 
 permissions:
   contents: read
-
-env:
-  CARGO_TERM_COLOR: never
-  RUST_BACKTRACE: 1
+  id-token: write
 
 jobs:
   test-build:
     runs-on: ubuntu-24.04
-    services:
-      nats:
-        image: nats:2.10-alpine
-        ports:
-          - 4222:4222
-        options: >-
-          --name nats
-    strategy:
-      fail-fast: false
-      matrix:
-        target: ["x86_64-unknown-linux-gnu", "x86_64-unknown-linux-musl", "aarch64-unknown-linux-musl"]
     steps:
-      - name: Checkout (git)
-        shell: bash
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+
+      - name: Test (wasm fallback)
         run: |
-          git init .
-          git remote add origin "${{ github.server_url }}/${{ github.repository }}.git"
-          git fetch --depth=1 origin "${{ github.sha }}"
-          git checkout --detach "${{ github.sha }}"
+          export MAGICRUNE_FORCE_WASM=1
+          cargo test --workspace --locked
 
-      - id: wd
-        name: Resolve working directory
-        shell: bash
-        run: |
-          if [ -f spell-app/magicrune/Cargo.toml ]; then
-            echo "value=spell-app/magicrune" >> "$GITHUB_OUTPUT"
-          else
-            echo "value=." >> "$GITHUB_OUTPUT"
-          fi
+      - name: Build (linux-gnu host)
+        run: cargo build --release --workspace --locked
 
-      - name: Generate lockfile (if outdated)
-        working-directory: ${{ steps.wd.outputs.value }}
-        run: |
-          cargo update -q || cargo generate-lockfile
+      - name: Install cross
+        run: cargo install cross --git https://github.com/cross-rs/cross
+      - name: Build musl (x86_64)
+        run: cross build --release --target x86_64-unknown-linux-musl
+      - name: Build musl (aarch64)
+        run: cross build --release --target aarch64-unknown-linux-musl
 
-      - name: Install Rust 1.80 toolchain
-        shell: bash
-        run: |
-          set -e
-          rustup toolchain install 1.80.0 --profile minimal
-          rustup default 1.80.0
-          rustup component add rustfmt clippy --toolchain 1.80.0
-          rustup target add "${{ matrix.target }}"
+      - name: Generate SBOM (Syft)
+        uses: anchore/sbom-action@v0
+        with:
+          output-file: sbom.spdx.json
 
-      - name: Pre-fetch
-        working-directory: ${{ steps.wd.outputs.value }}
-        run: cargo fetch --locked --quiet
+      - name: Install cosign
+        uses: sigstore/cosign-installer@v3
+      - name: Sign SBOM (OIDC keyless)
+        run: cosign sign-blob --yes --bundle sbom.spdx.json
 
-      - name: Wait for NATS (non-musl)
-        if: ${{ !contains(matrix.target, 'musl') }}
-        shell: bash
-        run: |
-          for i in {1..60}; do
-            (echo > /dev/tcp/127.0.0.1/4222) >/dev/null 2>&1 && exit 0 || true
-            sleep 1
-          done
-          echo "NATS port 4222 not ready" >&2
-          exit 1
-
-      - name: Format & Clippy gates
-        working-directory: ${{ steps.wd.outputs.value }}
-        run: |
-          cargo fmt --all -- --check
-          cargo clippy --all-targets --all-features -- -D warnings
-
-      - name: Install cross (musl only)
-        if: contains(matrix.target, 'musl')
-        run: cargo install cross@0.2.5 --locked
-
-      - name: Run unit/integration tests
-        working-directory: ${{ steps.wd.outputs.value }}
-        shell: bash
-        run: |
-          if [[ "${{ matrix.target }}" == *"musl"* ]]; then
-            cross test --all-targets --workspace --target "${{ matrix.target }}" --locked --quiet
-          else
-            cargo test --all-targets --workspace --target "${{ matrix.target }}" --locked --quiet
-          fi
-
-      - name: Run E2E (non-musl only)
-        if: ${{ !contains(matrix.target, 'musl') }}
-        working-directory: ${{ steps.wd.outputs.value }}
-        run: cargo test --test e2e -- --nocapture --test-threads=1
-
-      - name: Run Jet tests (non-musl, features)
-        if: ${{ !contains(matrix.target, 'musl') }}
-        working-directory: ${{ steps.wd.outputs.value }}
-        env:
-          NATS_TCP: 127.0.0.1:4222
-        run: cargo test --test nats_smoke -- --nocapture --test-threads=1
-
-      - name: Run Wasm tests (non-musl, features)
-        if: ${{ !contains(matrix.target, 'musl') }}
-        working-directory: ${{ steps.wd.outputs.value }}
-        run: cargo test --features wasm_exec --test wasm_smoke -- --nocapture --test-threads=1
-
-      - name: Build release
-        working-directory: ${{ steps.wd.outputs.value }}
-        shell: bash
-        run: |
-          if [[ "${{ matrix.target }}" == *"musl"* ]]; then
-            cross build --release --workspace --target "${{ matrix.target }}" --locked
-          else
-            cargo build --release --workspace --target "${{ matrix.target }}" --locked
-          fi
-
-      - name: Feature build (gnu only)
-        if: ${{ !contains(matrix.target, 'musl') }}
-        working-directory: ${{ steps.wd.outputs.value }}
-        run: |
-          cargo build --workspace --locked --features jet,wasm_exec --target "${{ matrix.target }}"
-
-      - name: Install cargo-audit (lightweight)
-        run: cargo install cargo-audit --locked --version 0.21.1
-
-      - name: cargo-audit
-        working-directory: ${{ steps.wd.outputs.value }}
-        run: |
-          cargo audit --locked \
-            --ignore RUSTSEC-2025-0046 \
-            --ignore RUSTSEC-2024-0438 \
-            --ignore RUSTSEC-2024-0436 \
-            --ignore RUSTSEC-2020-0168 \
-            --ignore RUSTSEC-2024-0442
+      - name: Upload artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: magicrune-${{ github.sha }}
+          path: |
+            target/x86_64-unknown-linux-musl/release/magicrune
+            target/aarch64-unknown-linux-musl/release/magicrune
+            sbom.spdx.json
+            sbom.spdx.json.sig

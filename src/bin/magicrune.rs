@@ -4,6 +4,7 @@ use std::io::{self, Write};
 use std::path::Path;
 use std::str::FromStr;
 
+use base64::Engine;
 use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Deserialize)]
@@ -504,6 +505,48 @@ fn main() {
         "yellow" => 10,
         _ => 20,
     };
+
+    // Minimal file materialization with policy check (allow_fs)
+    // Only allow writes under /tmp/** unless policy explicitly allows broader paths.
+    if !req.files.is_empty() {
+        for f in &req.files {
+            let p = Path::new(&f.path);
+            let allowed_tmp = p.starts_with("/tmp/");
+            let mut allowed = allowed_tmp; // default allow only /tmp/**
+            if !req.allow_fs.is_empty() {
+                for pat in &req.allow_fs {
+                    if pat == "/tmp/**" && allowed_tmp {
+                        allowed = true;
+                        break;
+                    }
+                    // very simple contains check for explicit paths
+                    if pat == &f.path {
+                        allowed = true;
+                        break;
+                    }
+                }
+            }
+            if !allowed {
+                eprintln!("policy: write denied for {}", f.path);
+                std::process::exit(3);
+            }
+            if let Some(dir) = p.parent() {
+                let _ = fs::create_dir_all(dir);
+            }
+            if !f.content_b64.is_empty() {
+                if let Ok(bytes) = base64::engine::general_purpose::STANDARD.decode(&f.content_b64)
+                {
+                    if let Err(e) = fs::write(p, &bytes) {
+                        eprintln!("write failed: {}: {}", f.path, e);
+                        std::process::exit(4);
+                    }
+                }
+            } else if let Err(e) = fs::write(p, []) {
+                eprintln!("write failed: {}: {}", f.path, e);
+                std::process::exit(4);
+            }
+        }
+    }
 
     let result = SpellResult {
         run_id,

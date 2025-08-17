@@ -33,4 +33,3 @@ impl Ledger for InMemoryLedger {
         g.get(run_id).cloned()
     }
 }
-

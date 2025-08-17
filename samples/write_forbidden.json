@@ -1,0 +1,13 @@
+{
+  "cmd": "echo write",
+  "stdin": "",
+  "env": {},
+  "files": [
+    { "path": "/home/user/evil.txt", "content_b64": "" }
+  ],
+  "policy_id": "default",
+  "timeout_sec": 15,
+  "allow_net": [],
+  "allow_fs": []
+}
+
