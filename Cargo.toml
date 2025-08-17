@@ -18,7 +18,7 @@ std = []
 wasm = []
 jet = ["dep:async-nats"]
 wasm_exec = ["dep:wasmtime"]
-linux_native = []
+linux_native = ["dep:nix"]
 
 [dependencies]
 thiserror = "2.0"
@@ -30,6 +30,7 @@ wasmtime = { version = "15", optional = true }
 wasmtime-wasi = { version = "15", optional = true }
 sha2 = "0.10"
 base64 = "0.22"
+nix = { version = "0.29", optional = true }
 
 
 [target.'cfg(target_arch = "wasm32")'.dependencies]
