@@ -58,7 +58,8 @@ pub async fn exec_wasm(_wasm_bytes: &[u8], _spec: &SandboxSpec) -> SandboxOutcom
 #[cfg(feature = "wasm_exec")]
 pub mod wasm_impl {
     use super::{SandboxOutcome, SandboxSpec};
-    use wasmtime::{Config, Engine};
+    use wasmtime::{Config, Engine, Linker, Module, Store};
+    use wasmtime_wasi::sync::WasiCtxBuilder;
 
     pub fn engine() -> Engine {
         let mut cfg = Config::new();
@@ -66,8 +67,23 @@ pub mod wasm_impl {
         Engine::new(&cfg).expect("engine")
     }
 
-    pub async fn exec_bytes(_wasm_bytes: &[u8], _spec: &SandboxSpec) -> SandboxOutcome {
-        let _engine = engine();
+    pub async fn exec_bytes(wasm_bytes: &[u8], _spec: &SandboxSpec) -> SandboxOutcome {
+        let engine = engine();
+        let mut store = Store::new(&engine, WasiCtxBuilder::new().inherit_stdio().build());
+        let module = match Module::from_binary(&engine, wasm_bytes) {
+            Ok(m) => m,
+            Err(_) => return SandboxOutcome::empty(),
+        };
+        let mut linker = Linker::new(&engine);
+        wasmtime_wasi::add_to_linker(&mut linker, |cx| cx).ok();
+        let instance = match linker.instantiate(&mut store, &module) {
+            Ok(i) => i,
+            Err(_) => return SandboxOutcome::empty(),
+        };
+        // Try to call _start if present
+        if let Ok(start) = instance.get_typed_func::<(), (), _>(&mut store, "_start") {
+            let _ = start.call(&mut store, ());
+        }
         SandboxOutcome::empty()
     }
 }

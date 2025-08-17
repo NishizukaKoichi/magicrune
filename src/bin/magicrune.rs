@@ -185,6 +185,54 @@ fn load_thresholds_from_policy(path: &str) -> Thresholds {
     Thresholds { green, yellow, red }
 }
 
+#[derive(Debug, Clone, Copy)]
+struct PolicyLimits {
+    wall_sec: u64,
+    #[allow(dead_code)]
+    cpu_ms: u64,
+    #[allow(dead_code)]
+    memory_mb: u64,
+}
+
+impl Default for PolicyLimits {
+    fn default() -> Self {
+        Self {
+            wall_sec: 60,
+            cpu_ms: 5000,
+            memory_mb: 512,
+        }
+    }
+}
+
+fn extract_yaml_u64(content: &str, key: &str) -> Option<u64> {
+    for line in content.lines() {
+        let trimmed = line.trim();
+        if let Some(rest0) = trimmed.strip_prefix(key) {
+            let rest = rest0.trim();
+            let val = rest.trim_start_matches(':').trim();
+            if let Ok(v) = u64::from_str(val.trim_matches('"')) {
+                return Some(v);
+            }
+        }
+    }
+    None
+}
+
+fn load_limits_from_policy(path: &str) -> PolicyLimits {
+    let text = match std::fs::read_to_string(path) {
+        Ok(s) => s,
+        Err(_) => return PolicyLimits::default(),
+    };
+    let wall_sec = extract_yaml_u64(&text, "wall_sec").unwrap_or(60);
+    let cpu_ms = extract_yaml_u64(&text, "cpu_ms").unwrap_or(5000);
+    let memory_mb = extract_yaml_u64(&text, "memory_mb").unwrap_or(512);
+    PolicyLimits {
+        wall_sec,
+        cpu_ms,
+        memory_mb,
+    }
+}
+
 // Parse range expressions like "<=20", "21..=60", ">=61" and decide verdict.
 fn decide_verdict_from_thresholds(score: u32, th: &Thresholds) -> &'static str {
     fn matches(expr: &str, n: u32) -> bool {
@@ -422,17 +470,31 @@ fn main() {
         || cmd_l.contains("wget ")
         || cmd_l.contains("http://")
         || cmd_l.contains("https://");
+    // Early policy enforcement
+    let policy_path = _policy_path
+        .or_else(|| std::env::var("MAGICRUNE_POLICY").ok())
+        .unwrap_or_else(|| "policies/default.policy.yml".to_string());
+    let limits = load_limits_from_policy(&policy_path);
     if net_intent && req.allow_net.is_empty() {
-        risk_score += 40;
+        eprintln!("policy: network is not allowed (allow_net is empty)");
+        std::process::exit(3);
+    }
+    if req.timeout_sec > limits.wall_sec {
+        eprintln!(
+            "policy: timeout_sec {} exceeds wall_sec limit {}",
+            req.timeout_sec, limits.wall_sec
+        );
+        std::process::exit(3);
+    }
+
+    if net_intent && req.allow_net.is_empty() {
+        risk_score += 40; // still reflected in risk if allowed via policy elsewhere
     }
     if cmd_l.contains("ssh ") {
         risk_score += 30;
     }
 
     // Load thresholds from policy (if available)
-    let policy_path = _policy_path
-        .or_else(|| std::env::var("MAGICRUNE_POLICY").ok())
-        .unwrap_or_else(|| "policies/default.policy.yml".to_string());
     let thresholds = load_thresholds_from_policy(&policy_path);
     let verdict = decide_verdict_from_thresholds(risk_score, &thresholds);
 

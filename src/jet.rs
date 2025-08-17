@@ -10,6 +10,14 @@ pub struct JsResult<T> {
     pub err: Option<String>,
 }
 
+pub fn compute_msg_id(payload: &[u8]) -> String {
+    use sha2::{Digest, Sha256};
+    let mut hasher = Sha256::new();
+    hasher.update(payload);
+    let hash = hasher.finalize();
+    format!("{:x}", hash)
+}
+
 pub async fn send_request(_cfg: &JsConfig, _bytes: &[u8]) -> JsResult<()> {
     JsResult {
         ok: false,
@@ -31,6 +39,7 @@ pub async fn publish_result(_subject: &str, _bytes: &[u8]) -> JsResult<()> {
 pub mod jet_impl {
     use async_nats::Client;
     use std::error::Error as StdError;
+    use super::compute_msg_id;
 
     pub async fn connect(url: &str) -> Result<Client, Box<dyn StdError + Send + Sync>> {
         async_nats::connect(url)
@@ -43,8 +52,11 @@ pub mod jet_impl {
         subject: &str,
         req: &[u8],
     ) -> Result<(), Box<dyn StdError + Send + Sync>> {
-        // NOTE: Dedup header (Nats-Msg-Id) will be added in a later step if needed.
-        nc.publish(subject.to_string(), req.to_vec().into())
+        let mut msg = async_nats::Message::new(subject, req.to_vec());
+        let id = compute_msg_id(req);
+        msg.headers_mut()
+            .insert("Nats-Msg-Id", async_nats::header::HeaderValue::from_str(&id).unwrap());
+        nc.publish_message(msg)
             .await
             .map_err(|e| Box::new(e) as Box<dyn StdError + Send + Sync>)?;
         Ok(())
