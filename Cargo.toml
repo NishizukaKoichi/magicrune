@@ -18,6 +18,7 @@ std = []
 wasm = []
 jet = ["dep:async-nats"]
 wasm_exec = ["dep:wasmtime"]
+linux_native = []
 
 [dependencies]
 thiserror = "2.0"

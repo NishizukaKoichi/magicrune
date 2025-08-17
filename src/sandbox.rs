@@ -1,3 +1,9 @@
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum SandboxKind {
+    Wasi,
+    Linux,
+}
+
 pub struct SandboxSpec {
     pub wall_sec: u64,
     pub cpu_ms: u64,
@@ -18,6 +24,23 @@ impl SandboxOutcome {
             stderr: Vec::new(),
         }
     }
+}
+
+/// Detect which sandbox to use at runtime.
+/// Defaults to WASI unless running on Linux with the optional `linux_native` feature enabled.
+/// If the env `MAGICRUNE_FORCE_WASM=1` is set, always selects WASI.
+pub fn detect_sandbox() -> SandboxKind {
+    if std::env::var("MAGICRUNE_FORCE_WASM").ok().as_deref() == Some("1") {
+        return SandboxKind::Wasi;
+    }
+
+    #[cfg(all(target_os = "linux", feature = "linux_native"))]
+    {
+        return SandboxKind::Linux;
+    }
+
+    // Fallback
+    SandboxKind::Wasi
 }
 
 // Placeholders for native/wasm sandbox backends (wired in CI later)
