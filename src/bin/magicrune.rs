@@ -75,9 +75,9 @@ fn sha256_hex(input: &[u8]) -> String {
 
     for chunk in data.chunks(64) {
         let mut w = [0u32; 64];
-        for i in 0..16 {
+        for (i, item) in w.iter_mut().enumerate().take(16) {
             let j = i * 4;
-            w[i] = u32::from_be_bytes([chunk[j], chunk[j + 1], chunk[j + 2], chunk[j + 3]]);
+            *item = u32::from_be_bytes([chunk[j], chunk[j + 1], chunk[j + 2], chunk[j + 3]]);
         }
         for t in 16..64 {
             let s0 = w[t - 15].rotate_right(7) ^ w[t - 15].rotate_right(18) ^ (w[t - 15] >> 3);
@@ -393,7 +393,7 @@ fn main() {
             "stdout_trunc",
         ];
         for k in reqd.iter() {
-            if !out_val.get(*k).is_some() {
+            if out_val.get(*k).is_none() {
                 eprintln!("output schema: missing {}", k);
                 std::process::exit(2);
             }
