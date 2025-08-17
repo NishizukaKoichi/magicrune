@@ -1,9 +1,11 @@
+use bootstrapped::sandbox::{detect_sandbox, SandboxKind};
 use std::env;
 use std::fs;
 use std::io::{self, Write};
 use std::path::Path;
 use std::process::{Command, Stdio};
 use std::str::FromStr;
+use std::time::{Duration, Instant};
 
 use base64::Engine;
 use serde::{Deserialize, Serialize};
@@ -549,31 +551,57 @@ fn main() {
         }
     }
 
-    // Optionally execute the command once (local native exec, without isolation).
-    // In strict environments, set MAGICRUNE_DRY_RUN=1 to skip actual exec.
+    // Optionally execute the command once.
+    // - Linux+native: run locally (placeholder for true sandbox)
+    // - Otherwise (WASI default): skip here (feature-gated path elsewhere)
+    // - MAGICRUNE_DRY_RUN=1 to skip entirely
     let mut captured_stdout: Vec<u8> = Vec::new();
     let mut captured_stderr: Vec<u8> = Vec::new();
     let mut actual_exit: Option<i32> = None;
+    let mut forced_timeout_red = false;
+    let mut duration_ms: u64 = 0;
     if std::env::var("MAGICRUNE_DRY_RUN").ok().as_deref() != Some("1") && !req.cmd.trim().is_empty()
     {
-        let mut child = Command::new("bash")
-            .arg("-lc")
-            .arg(&req.cmd)
-            .stdin(Stdio::piped())
-            .stdout(Stdio::piped())
-            .stderr(Stdio::piped())
-            .spawn()
-            .expect("spawn bash");
-        if !req.stdin.is_empty() {
-            use std::io::Write as _;
-            if let Some(mut sin) = child.stdin.take() {
-                let _ = sin.write_all(req.stdin.as_bytes());
+        match detect_sandbox() {
+            SandboxKind::Linux => {
+                let started = Instant::now();
+                let mut child = Command::new("bash")
+                    .arg("-lc")
+                    .arg(&req.cmd)
+                    .stdin(Stdio::piped())
+                    .stdout(Stdio::piped())
+                    .stderr(Stdio::piped())
+                    .spawn()
+                    .expect("spawn bash");
+                if !req.stdin.is_empty() {
+                    use std::io::Write as _;
+                    if let Some(mut sin) = child.stdin.take() {
+                        let _ = sin.write_all(req.stdin.as_bytes());
+                    }
+                }
+                let deadline = Instant::now() + Duration::from_secs(limits.wall_sec);
+                loop {
+                    if let Ok(Some(_status)) = child.try_wait() {
+                        let out = child.wait_with_output().expect("collect output after exit");
+                        duration_ms = started.elapsed().as_millis() as u64;
+                        captured_stdout = out.stdout.clone();
+                        captured_stderr = out.stderr.clone();
+                        actual_exit = out.status.code();
+                        break;
+                    }
+                    if Instant::now() >= deadline {
+                        let _ = child.kill();
+                        forced_timeout_red = true;
+                        duration_ms = started.elapsed().as_millis() as u64;
+                        break;
+                    }
+                    std::thread::sleep(Duration::from_millis(25));
+                }
+            }
+            SandboxKind::Wasi => {
+                // No-op here; WASI execution is wired in sandbox module when feature is enabled.
             }
         }
-        let out = child.wait_with_output().expect("wait output");
-        captured_stdout = out.stdout.clone();
-        captured_stderr = out.stderr.clone();
-        actual_exit = out.status.code();
     }
 
     let result = SpellResult {
@@ -581,12 +609,21 @@ fn main() {
         verdict: verdict.to_string(),
         risk_score,
         exit_code: actual_exit.unwrap_or(exit_code),
-        duration_ms: 0,
+        duration_ms,
         stdout_trunc: false,
         sbom_attestation: None,
     };
 
-    let out_json = serde_json::to_string_pretty(&result).expect("serialize");
+    // If runtime timeout was hit, force red verdict and exit=20
+    let mut out_json = serde_json::to_string_pretty(&result).expect("serialize");
+    let mut final_exit = result.exit_code;
+    if forced_timeout_red {
+        let mut v: serde_json::Value = serde_json::from_str(&out_json).unwrap();
+        v["verdict"] = serde_json::Value::String("red".to_string());
+        v["exit_code"] = serde_json::Value::Number(20u64.into());
+        out_json = serde_json::to_string_pretty(&v).unwrap();
+        final_exit = 20;
+    }
     // Output schema minimal validation under --strict
     if strict {
         // Ensure required keys and types
@@ -650,7 +687,7 @@ fn main() {
     }
 
     // Quarantine for red verdict (write result + captured stdout/stderr if any)
-    if exit_code == 20 {
+    if forced_timeout_red || final_exit == 20 {
         let qdir = Path::new("quarantine");
         let _ = fs::create_dir_all(qdir);
         let _ = fs::write(qdir.join("result.red.json"), out_json.as_bytes());
@@ -658,5 +695,5 @@ fn main() {
         let _ = fs::write(qdir.join("stderr.txt"), &captured_stderr);
     }
 
-    std::process::exit(exit_code);
+    std::process::exit(final_exit);
 }
