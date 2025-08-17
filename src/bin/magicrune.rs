@@ -2,6 +2,7 @@ use std::env;
 use std::fs;
 use std::io::{self, Write};
 use std::path::Path;
+use std::process::{Command, Stdio};
 use std::str::FromStr;
 
 use base64::Engine;
@@ -548,11 +549,38 @@ fn main() {
         }
     }
 
+    // Optionally execute the command once (local native exec, without isolation).
+    // In strict environments, set MAGICRUNE_DRY_RUN=1 to skip actual exec.
+    let mut captured_stdout: Vec<u8> = Vec::new();
+    let mut captured_stderr: Vec<u8> = Vec::new();
+    let mut actual_exit: Option<i32> = None;
+    if std::env::var("MAGICRUNE_DRY_RUN").ok().as_deref() != Some("1") && !req.cmd.trim().is_empty()
+    {
+        let mut child = Command::new("bash")
+            .arg("-lc")
+            .arg(&req.cmd)
+            .stdin(Stdio::piped())
+            .stdout(Stdio::piped())
+            .stderr(Stdio::piped())
+            .spawn()
+            .expect("spawn bash");
+        if !req.stdin.is_empty() {
+            use std::io::Write as _;
+            if let Some(mut sin) = child.stdin.take() {
+                let _ = sin.write_all(req.stdin.as_bytes());
+            }
+        }
+        let out = child.wait_with_output().expect("wait output");
+        captured_stdout = out.stdout.clone();
+        captured_stderr = out.stderr.clone();
+        actual_exit = out.status.code();
+    }
+
     let result = SpellResult {
         run_id,
         verdict: verdict.to_string(),
         risk_score,
-        exit_code,
+        exit_code: actual_exit.unwrap_or(exit_code),
         duration_ms: 0,
         stdout_trunc: false,
         sbom_attestation: None,
@@ -621,13 +649,13 @@ fn main() {
         let _ = stdout.write_all(out_json.as_bytes());
     }
 
-    // Quarantine placeholder for red verdict (write result + empty stdout/stderr)
+    // Quarantine for red verdict (write result + captured stdout/stderr if any)
     if exit_code == 20 {
         let qdir = Path::new("quarantine");
         let _ = fs::create_dir_all(qdir);
         let _ = fs::write(qdir.join("result.red.json"), out_json.as_bytes());
-        let _ = fs::write(qdir.join("stdout.txt"), b"");
-        let _ = fs::write(qdir.join("stderr.txt"), b"");
+        let _ = fs::write(qdir.join("stdout.txt"), &captured_stdout);
+        let _ = fs::write(qdir.join("stderr.txt"), &captured_stderr);
     }
 
     std::process::exit(exit_code);

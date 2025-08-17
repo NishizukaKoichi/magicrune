@@ -36,5 +36,8 @@ base64 = "0.22"
 wasm-bindgen = "0.2"
 js-sys = "0.3"
 
+[dependencies.tokio]
+version = "1.47"
+features = ["rt-multi-thread","macros","time","process"]
+
 [dev-dependencies]
-tokio = { version = "1.47", features = ["full"] }
