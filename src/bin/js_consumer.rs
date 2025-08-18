@@ -66,6 +66,84 @@ mod app {
         format!("{:x}", hash)
     }
 
+    fn load_net_allow_from_policy(path: &str) -> Vec<String> {
+        let text = std::fs::read_to_string(path).unwrap_or_default();
+        let mut out = Vec::new();
+        let mut in_caps=false; let mut in_net=false; let mut in_allow=false;
+        let mut caps_indent=0usize; let mut net_indent=0usize; let mut allow_indent=0usize;
+        for raw in text.lines() {
+            let indent = raw.chars().take_while(|c| c.is_whitespace()).count();
+            let line = raw.trim();
+            if line.starts_with('#') || line.is_empty() { continue; }
+            if !in_caps && line == "capabilities:" { in_caps=true; caps_indent=indent; continue; }
+            if in_caps {
+                if indent <= caps_indent { in_caps=false; in_net=false; in_allow=false; }
+                if !in_net && line == "net:" { in_net=true; net_indent=indent; continue; }
+                if in_net {
+                    if indent <= net_indent { in_net=false; in_allow=false; }
+                    if !in_allow && line == "allow:" { in_allow=true; allow_indent=indent; continue; }
+                    if in_allow {
+                        if indent <= allow_indent { in_allow=false; }
+                        if line.starts_with("- ") {
+                            if let Some(rest) = line.trim_start_matches("- ").split_once(':') {
+                                let v = rest.1.trim().trim_matches('"');
+                                if !v.is_empty() { out.push(v.to_string()); }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        out
+    }
+
+    fn extract_http_hosts(cmd: &str) -> Vec<String> {
+        let mut out = Vec::new();
+        for scheme in ["http://", "https://"].iter() {
+            let mut i = 0usize;
+            while let Some(pos) = cmd[i..].find(scheme) {
+                let start = i + pos + scheme.len();
+                let rest = &cmd[start..];
+                let end = rest.find(|c: char| c == '/' || c.is_whitespace()).unwrap_or(rest.len());
+                let hostport = &rest[..end];
+                if !hostport.is_empty() { out.push(hostport.to_string()); }
+                i = start + end;
+            }
+        }
+        out
+    }
+
+    fn hostport_parts(s: &str) -> (std::borrow::Cow<str>, Option<&str>) {
+        let st = s.trim();
+        if let Some(rest) = st.strip_prefix('[') {
+            if let Some(pos) = rest.find(']') {
+                let host = &rest[..pos];
+                let after = &rest[pos+1..];
+                if let Some(p) = after.strip_prefix(':') { return (std::borrow::Cow::Owned(host.to_string()), Some(p)); }
+                return (std::borrow::Cow::Owned(host.to_string()), None);
+            }
+        }
+        if let Some((h,p)) = st.rsplit_once(':') {
+            if !p.is_empty() && p.chars().all(|c| c.is_ascii_digit()) { return (std::borrow::Cow::Owned(h.to_string()), Some(p)); }
+        }
+        (std::borrow::Cow::Borrowed(st), None)
+    }
+
+    fn parse_port_spec(p: Option<&str>) -> (bool, Option<(u16,u16)>) {
+        if let Some(ps) = p { if ps == "*" { return (true,None); } if let Some((a,b))=ps.split_once('-'){ if let (Ok(x),Ok(y))=(a.parse(),b.parse()){ return (false,Some((x,y))); } } if let Ok(x)=ps.parse::<u16>(){ return (false,Some((x,x))); } }
+        (false,None)
+    }
+    fn parse_cidr(host: &str) -> Option<(std::net::IpAddr, u8)> { if let Some((ip,pre))=host.split_once('/') { if let (Ok(addr),Ok(p))=(ip.parse(),pre.parse()) { return Some((addr,p)); } } None }
+    fn ip_in_cidr(ip: std::net::IpAddr, cidr:(std::net::IpAddr,u8))->bool{ match (ip,cidr.0){ (std::net::IpAddr::V4(a),std::net::IpAddr::V4(n))=>{ let a=u32::from(a);let n=u32::from(n); let p=cidr.1; if p==0{return true;} let mask= if p==32{u32::MAX}else{(!0u32)<<(32-p as u32)}; (a&mask)==(n&mask) }, (std::net::IpAddr::V6(a),std::net::IpAddr::V6(n))=>{ let a=u128::from(a);let n=u128::from(n); let p=cidr.1; if p==0{return true;} let mask= if p==128{u128::MAX}else{(!0u128)<<(128-p as u32)}; (a&mask)==(n&mask) }, _=>false } }
+    fn allowed_match(host: &str, port: Option<&str>, allow: &str) -> bool {
+        if let Some((net,pre))=parse_cidr(allow){ if let Ok(ip)=host.parse::<std::net::IpAddr>(){ return ip_in_cidr(ip,(net,pre)); } return false; }
+        let (a_host_port,a_ps)=hostport_parts(allow); let (any,range)=parse_port_spec(a_ps); let a_host=a_host_port.as_ref();
+        if let Some(suf)=a_host.strip_prefix("*.") { if host.ends_with(suf){ if any{return true;} if let (Some((lo,hi)),Some(p))=(range,port.and_then(|x|x.parse::<u16>().ok())){return p>=lo&&p<=hi;} return range.is_none(); } }
+        if a_host==host{ if any{return true;} if let (Some((lo,hi)),Some(p))=(range,port.and_then(|x|x.parse::<u16>().ok())){return p>=lo&&p<=hi;} return range.is_none(); }
+        if a_host.starts_with('[')&&a_host.ends_with(']'){ let inner=&a_host[1..a_host.len()-1]; if inner==host{ return true; } }
+        false
+    }
+
     fn extract_yaml_scalar_under(content: &str, section: &str, key: &str) -> Option<String> {
         let mut in_section = false;
         let mut section_indent: Option<usize> = None;
@@ -281,6 +359,39 @@ mod app {
                     let net_intent = cmd_l.contains("curl ") || cmd_l.contains("wget ") || cmd_l.contains("http://") || cmd_l.contains("https://");
                     let policy_path = std::env::var("MAGICRUNE_POLICY").unwrap_or_else(|_| "policies/default.policy.yml".to_string());
                     let (wall_sec, _cpu_ms, _memory_mb) = load_limits_from_policy(&policy_path);
+                    let policy_fs_allow = {
+                        fn load_fs_allow_from_policy(text: &str) -> Vec<String> {
+                            let mut out = Vec::new();
+                            let mut in_caps=false; let mut in_fs=false; let mut in_allow=false;
+                            let mut caps_indent=0usize; let mut fs_indent=0usize; let mut allow_indent=0usize;
+                            for raw in text.lines() {
+                                let indent = raw.chars().take_while(|c| c.is_whitespace()).count();
+                                let line = raw.trim();
+                                if line.starts_with('#') || line.is_empty() { continue; }
+                                if !in_caps && line == "capabilities:" { in_caps=true; caps_indent=indent; continue; }
+                                if in_caps {
+                                    if indent <= caps_indent { in_caps=false; in_fs=false; in_allow=false; }
+                                    if !in_fs && line == "fs:" { in_fs=true; fs_indent=indent; continue; }
+                                    if in_fs {
+                                        if indent <= fs_indent { in_fs=false; in_allow=false; }
+                                        if !in_allow && line == "allow:" { in_allow=true; allow_indent=indent; continue; }
+                                        if in_allow {
+                                            if indent <= allow_indent { in_allow=false; }
+                                            if line.starts_with("- ") {
+                                                if let Some(rest) = line.trim_start_matches("- ").strip_prefix("path:") {
+                                                    let v = rest.trim().trim_start_matches(':').trim().trim_matches('"');
+                                                    if !v.is_empty() { out.push(v.to_string()); }
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                            out
+                        }
+                        let txt = std::fs::read_to_string(&policy_path).unwrap_or_default();
+                        load_fs_allow_from_policy(&txt)
+                    };
                     if net_intent && req.allow_net.is_empty() {
                         let res = SpellResult { run_id: run_id.clone(), verdict: "red".into(), risk_score: 80, exit_code: 20, duration_ms: 0, stdout_trunc: false, sbom_attestation: None };
                         let subj = format!("run.res.{}", run_id);
@@ -298,9 +409,7 @@ mod app {
                         if !p.is_absolute() || f.path.contains("..") { fs_violation = true; break; }
                         let allowed_tmp = p.starts_with("/tmp/");
                         let mut allowed = allowed_tmp;
-                        if !req.allow_fs.is_empty() {
-                            for pat in &req.allow_fs { if pat == "/tmp/**" && allowed_tmp { allowed = true; break; } if pat == &f.path { allowed = true; break; } }
-                        }
+                        for pat in &policy_fs_allow { if pat == "/tmp/**" && allowed_tmp { allowed = true; break; } if pat == &f.path { allowed = true; break; } }
                         if !allowed { fs_violation = true; break; }
                         if let Some(dir) = p.parent() { let _ = std::fs::create_dir_all(dir); }
                         if !f.content_b64.is_empty() {
@@ -386,19 +495,22 @@ mod app {
                 .unwrap_or_else(|_| "policies/default.policy.yml".to_string());
             let (wall_sec, _cpu_ms, _memory_mb) = load_limits_from_policy(&policy_path);
             if net_intent && req.allow_net.is_empty() {
-                // policy violation: respond red with exit=20
-                let res = SpellResult {
-                    run_id: run_id.clone(),
-                    verdict: "red".into(),
-                    risk_score: 80,
-                    exit_code: 20,
-                    duration_ms: 0,
-                    stdout_trunc: false,
-                    sbom_attestation: None,
-                };
-                let subj = format!("run.res.{}", run_id);
-                let _ = nc.publish(subj, serde_json::to_vec(&res)?.into()).await;
-                continue;
+                // Enforce allowlist from policy + request
+                let mut allow = req.allow_net.clone();
+                allow.extend(load_net_allow_from_policy(&policy_path));
+                let hosts = extract_http_hosts(&req.cmd);
+                if allow.is_empty() {
+                    let res = SpellResult { run_id: run_id.clone(), verdict: "red".into(), risk_score: 80, exit_code: 20, duration_ms: 0, stdout_trunc: false, sbom_attestation: None };
+                    let subj = format!("run.res.{}", run_id);
+                    let _ = nc.publish(subj, serde_json::to_vec(&res)?.into()).await;
+                    continue;
+                }
+                let mut violation = false;
+                for h in hosts {
+                    let (hh, hp) = hostport_parts(&h);
+                    if !allow.iter().any(|a| allowed_match(&hh, hp, a)) { violation = true; break; }
+                }
+                if violation { let res = SpellResult { run_id: run_id.clone(), verdict: "red".into(), risk_score: 80, exit_code: 20, duration_ms: 0, stdout_trunc: false, sbom_attestation: None }; let subj = format!("run.res.{}", run_id); let _ = nc.publish(subj, serde_json::to_vec(&res)?.into()).await; continue; }
             }
             if cmd_l.contains("ssh ") {
                 risk_score += 30;

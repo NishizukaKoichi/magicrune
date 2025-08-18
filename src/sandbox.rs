@@ -8,6 +8,7 @@ pub struct SandboxSpec {
     pub wall_sec: u64,
     pub cpu_ms: u64,
     pub memory_mb: u64,
+    pub pids: u64,
 }
 
 pub struct SandboxOutcome {
@@ -59,6 +60,153 @@ pub async fn exec_wasm(_wasm_bytes: &[u8], _spec: &SandboxSpec) -> SandboxOutcom
     SandboxOutcome::empty()
 }
 
+#[cfg(all(target_os = "linux", feature = "native_sandbox"))]
+fn seccomp_minimal_allow() -> Result<(), String> {
+    use libseccomp::*;
+    // Default deny
+    let mut filter = ScmpFilterContext::new_filter(ScmpAction::Errno(1)).map_err(|e| format!("{:?}", e))?;
+    let arch = get_api() ; let _ = arch; // touch API to satisfy MSRV lint
+    let allow = |f: &mut ScmpFilterContext, sys: ScmpSyscall| -> Result<(), ScmpError> {
+        f.add_rule(ScmpAction::Allow, sys, &[])
+    };
+    // Essential syscalls
+    let mut list = vec![
+        ScmpSyscall::from_name("read").unwrap(),
+        ScmpSyscall::from_name("write").unwrap(),
+        ScmpSyscall::from_name("exit").unwrap(),
+        ScmpSyscall::from_name("exit_group").unwrap(),
+        ScmpSyscall::from_name("futex").unwrap_or_else(|_| ScmpSyscall::from_name("futex_time64").unwrap()),
+        ScmpSyscall::from_name("clock_gettime").unwrap_or_else(|_| ScmpSyscall::from_name("clock_gettime64").unwrap()),
+        ScmpSyscall::from_name("clock_nanosleep").unwrap_or_else(|_| ScmpSyscall::from_name("clock_nanosleep_time64").unwrap()),
+        ScmpSyscall::from_name("rt_sigaction").unwrap(),
+        ScmpSyscall::from_name("rt_sigprocmask").unwrap(),
+        ScmpSyscall::from_name("ppoll").unwrap_or_else(|_| ScmpSyscall::from_name("poll").unwrap()),
+        ScmpSyscall::from_name("openat").unwrap(),
+        ScmpSyscall::from_name("statx").unwrap(),
+        ScmpSyscall::from_name("close").unwrap(),
+        ScmpSyscall::from_name("mmap").unwrap(),
+        ScmpSyscall::from_name("munmap").unwrap(),
+        ScmpSyscall::from_name("brk").unwrap(),
+        ScmpSyscall::from_name("fstat").unwrap_or_else(|_| ScmpSyscall::from_name("newfstatat").unwrap()),
+        ScmpSyscall::from_name("lseek").unwrap(),
+        ScmpSyscall::from_name("fcntl").unwrap(),
+        ScmpSyscall::from_name("readlinkat").unwrap_or_else(|_| ScmpSyscall::from_name("readlink").unwrap()),
+    ];
+    // getrandom は緩和時に確実に許可
+    let loosen = std::env::var("MAGICRUNE_SECCOMP_LOOSEN").ok().as_deref() == Some("1");
+    if loosen {
+        for name in ["getrandom","prlimit64","setrlimit","clone3"].iter() {
+            if let Ok(sys) = ScmpSyscall::from_name(name) { list.push(sys); }
+        }
+        eprintln!("[seccomp] INFO: loosen enabled (added: getrandom, prlimit64, setrlimit, clone3)");
+    } else {
+        if let Ok(sys)=ScmpSyscall::from_name("getrandom") { list.push(sys); }
+    }
+    for s in list.into_iter() { allow(&mut filter, s).map_err(|e| format!("{:?}", e))?; }
+    filter.load().map_err(|e| format!("{:?}", e))?;
+    Ok(())
+}
+
+#[cfg(not(all(target_os = "linux", feature = "native_sandbox")))]
+fn seccomp_minimal_allow() -> Result<(), String> { Err("seccomp not supported in this build".into()) }
+
+// OverlayFS(ro) + tmpfs:/tmp (best-effort). Returns guard on success.
+#[cfg(target_os = "linux")]
+fn try_enable_overlay_ro() -> anyhow::Result<Option<OverlayGuard>> {
+    use nix::{mount, sched::unshare, mount::MsFlags, unistd};
+    use std::{fs, path::PathBuf};
+    if std::env::var("MAGICRUNE_OVERLAY_RO").ok().as_deref() != Some("1") {
+        return Ok(None);
+    }
+    // 1) new mount namespace
+    unshare(nix::sched::CloneFlags::CLONE_NEWNS)
+        .map_err(|e| anyhow::anyhow!("unshare(CLONE_NEWNS) failed: {e}"))?;
+    // 2) make rprivate
+    mount::mount(
+        Some("none"),
+        "/",
+        Option::<&str>::None,
+        MsFlags::MS_REC | MsFlags::MS_PRIVATE,
+        Option::<&str>::None,
+    )
+    .map_err(|e| anyhow::anyhow!("make-rprivate failed: {e}"))?;
+    // 3) scratch
+    let pid = std::process::id();
+    let scratch = PathBuf::from(format!("/tmp/mr_ovl_{pid}"));
+    let lower = std::env::current_dir().unwrap_or_else(|_| PathBuf::from("/"));
+    let upper = scratch.join("upper");
+    let work = scratch.join("work");
+    let root = scratch.join("root");
+    fs::create_dir_all(&upper)?; fs::create_dir_all(&work)?; fs::create_dir_all(&root)?;
+    // 4) tmpfs for tmp under scratch
+    let tmp_in_root = scratch.join("tmp");
+    fs::create_dir_all(&tmp_in_root)?;
+    mount::mount(
+        Some("tmpfs"),
+        tmp_in_root.as_path(),
+        Some("tmpfs"),
+        MsFlags::empty(),
+        Some("size=64m,mode=1777"),
+    )
+    .map_err(|e| anyhow::anyhow!("mount tmpfs failed: {e}"))?;
+    // 5) overlay mount
+    let opts = format!(
+        "lowerdir={},upperdir={},workdir={}",
+        lower.display(), upper.display(), work.display()
+    );
+    mount::mount(
+        Some("overlay"),
+        root.as_path(),
+        Some("overlay"),
+        MsFlags::empty(),
+        Some(opts.as_str()),
+    )
+    .map_err(|e| anyhow::anyhow!("mount overlay failed: {e}"))?;
+    // 6) minimal fs inside root
+    let proc_path = root.join("proc");
+    fs::create_dir_all(&proc_path).ok();
+    let _ = mount::mount(Some("proc"), proc_path.as_path(), Some("proc"), MsFlags::empty(), Some(""));
+    // bind tmp into root
+    let root_tmp = root.join("tmp");
+    fs::create_dir_all(&root_tmp)?;
+    mount::mount(
+        Some(tmp_in_root.as_path()),
+        root_tmp.as_path(),
+        Option::<&str>::None,
+        MsFlags::MS_BIND,
+        Option::<&str>::None,
+    )
+    .map_err(|e| anyhow::anyhow!("bind tmp into overlay root failed: {e}"))?;
+    // 8) pivot_root (best-effort), fallback to chroot
+    let put_old = root.join(".old_root");
+    std::fs::create_dir_all(&put_old).ok();
+    let pivot_ok = match unistd::pivot_root(&root, &put_old) {
+        Ok(_) => { let _ = unistd::chdir("/"); true },
+        Err(_e) => {
+            // fallback to chroot
+            if let Err(e) = unistd::chroot(&root) { return Err(anyhow::anyhow!("chroot failed after pivot_root fail: {e}")); }
+            let _ = unistd::chdir("/");
+            false
+        }
+    };
+    if pivot_ok {
+        // Detach old root
+        let _ = mount::umount2("/.old_root", mount::MntFlags::MNT_DETACH);
+        let _ = std::fs::remove_dir("/.old_root");
+    }
+    // 9) remount / ro
+    let _ = mount::mount(Some("none"), "/", Option::<&str>::None, MsFlags::MS_REMOUNT | MsFlags::MS_RDONLY, Option::<&str>::None);
+    Ok(Some(OverlayGuard { _scratch: scratch }))
+}
+
+#[cfg(not(target_os = "linux"))]
+fn try_enable_overlay_ro() -> anyhow::Result<Option<()>> { Ok(None) }
+
+#[cfg(target_os = "linux")]
+struct OverlayGuard { _scratch: std::path::PathBuf }
+#[cfg(target_os = "linux")]
+impl Drop for OverlayGuard { fn drop(&mut self) {} }
+
 // Optional Wasmtime wiring; compiled only when feature `wasm_exec` is enabled (CI).
 #[cfg(feature = "wasm_exec")]
 pub mod wasm_impl {
@@ -66,15 +214,33 @@ pub mod wasm_impl {
     use wasmtime::{Config, Engine, Linker, Module, Store};
     use wasmtime_wasi::sync::WasiCtxBuilder;
 
+    struct Limiter {
+        mem_bytes: u64,
+    }
+
+    impl wasmtime::ResourceLimiter for Limiter {
+        fn memory_growing(&mut self, _current: usize, desired: usize, _maximum: Option<usize>) -> bool {
+            (desired as u64) <= self.mem_bytes
+        }
+        fn table_growing(&mut self, _current: u32, _desired: u32, _maximum: Option<u32>) -> bool {
+            true
+        }
+    }
+
     pub fn engine() -> Engine {
         let mut cfg = Config::new();
         cfg.consume_fuel(true);
+        cfg.epoch_interruption(true);
         Engine::new(&cfg).expect("engine")
     }
 
     pub async fn exec_bytes(wasm_bytes: &[u8], _spec: &SandboxSpec) -> SandboxOutcome {
         let engine = engine();
         let mut store = Store::new(&engine, WasiCtxBuilder::new().inherit_stdio().build());
+        // Apply resource limits derived from spec
+        let fuel = 10_000_000u64; // coarse default fuel; could be derived from wall/cpu
+        let _ = store.add_fuel(fuel);
+        store.limiter(|_| Limiter { mem_bytes: 64 * 1024 * 1024 });
         let module = match Module::from_binary(&engine, wasm_bytes) {
             Ok(m) => m,
             Err(_) => return SandboxOutcome::empty(),
@@ -97,7 +263,68 @@ use std::process::{Command, Stdio};
 use std::time::{Duration, Instant};
 
 async fn simple_exec_with_timeout(cmd: &str, stdin: &[u8], spec: &SandboxSpec) -> SandboxOutcome {
-    let mut child = match Command::new("bash")
+    let mut command = Command::new("bash");
+    // Constrain working directory and env to /tmp
+    command.current_dir("/tmp");
+    command.env("HOME", "/tmp");
+    command.env("TMPDIR", "/tmp");
+    #[cfg(unix)]
+    {
+        use nix::sys::resource::{setrlimit, Resource, Rlim};
+        let _ = unsafe {
+            command.pre_exec(|| {
+                // Optional overlayfs(ro) + tmpfs:/tmp (best-effort)
+                #[cfg(target_os = "linux")]
+                {
+                    if std::env::var("MAGICRUNE_OVERLAY_RO").ok().as_deref() == Some("1") {
+                        match try_enable_overlay_ro() {
+                            Ok(Some(_g)) => {
+                                eprintln!("[overlay-ro] enabled (overlay root ro + tmpfs:/tmp)");
+                            }
+                            Ok(None) => { /* gate off; do nothing */ }
+                            Err(e) => {
+                                eprintln!("[overlay-ro] WARN: enable failed, fallback: {}", e);
+                            }
+                        }
+                    }
+                }
+                // CPU time limit (seconds)
+                let cpu_secs = (spec.cpu_ms / 1000) as u64;
+                if cpu_secs > 0 {
+                    let _ = setrlimit(Resource::RLIMIT_CPU, Rlim::from_raw(cpu_secs), Rlim::from_raw(cpu_secs));
+                }
+                // Address space (bytes)
+                let mem = (spec.memory_mb as u64) * 1024 * 1024;
+                if mem > 0 {
+                    let _ = setrlimit(Resource::RLIMIT_AS, Rlim::from_raw(mem), Rlim::from_raw(mem));
+                }
+                // pids
+                if spec.pids > 0 {
+                    let _ = setrlimit(Resource::RLIMIT_NPROC, Rlim::from_raw(spec.pids as u64), Rlim::from_raw(spec.pids as u64));
+                }
+                // Optional seccomp enable (best-effort) when feature/native and env toggled
+                #[cfg(all(target_os = "linux", feature = "native_sandbox"))]
+                {
+                    if std::env::var("MAGICRUNE_SECCOMP").ok().as_deref() == Some("1") {
+                        if let Err(e) = super::seccomp_minimal_allow() {
+                            eprintln!("WARN: seccomp enable failed: {} (fallback)", e);
+                        }
+                    }
+                }
+                Ok(())
+            })
+        };
+        // Best-effort cgroups v2 (opt-in)
+        #[cfg(target_os = "linux")]
+        if std::env::var("MAGICRUNE_CGROUPS").ok().as_deref() == Some("1") {
+            match crate::sandbox::cgroups::try_enable_cgroups(spec.cpu_ms, spec.memory_mb, spec.pids) {
+                Ok(Some(path)) => eprintln!("[cgroups] enabled at {}", path),
+                Ok(None) => {},
+                Err(e) => eprintln!("[cgroups] WARN: enable failed, fallback: {}", e),
+            }
+        }
+    }
+    let mut child = match command
         .arg("-lc")
         .arg(cmd)
         .stdin(Stdio::piped())
@@ -143,14 +370,33 @@ async fn simple_exec_with_timeout(cmd: &str, stdin: &[u8], spec: &SandboxSpec) -
 #[cfg(all(target_os = "linux", feature = "linux_native"))]
 async fn linux_try_exec(cmd: &str, stdin: &[u8], spec: &SandboxSpec) -> Option<SandboxOutcome> {
     use nix::sched::{unshare, CloneFlags};
-    if unshare(
+    // Try a stronger isolation first (include NEWNET/NEWUSER when allowed),
+    // fall back to a minimal set if kernel/permissions reject.
+    let attempts: &[CloneFlags] = &[
+        CloneFlags::CLONE_NEWUTS
+            | CloneFlags::CLONE_NEWIPC
+            | CloneFlags::CLONE_NEWPID
+            | CloneFlags::CLONE_NEWNS
+            | CloneFlags::CLONE_NEWNET
+            | CloneFlags::CLONE_NEWUSER,
+        CloneFlags::CLONE_NEWUTS
+            | CloneFlags::CLONE_NEWIPC
+            | CloneFlags::CLONE_NEWPID
+            | CloneFlags::CLONE_NEWNS
+            | CloneFlags::CLONE_NEWNET,
         CloneFlags::CLONE_NEWUTS
             | CloneFlags::CLONE_NEWIPC
             | CloneFlags::CLONE_NEWPID
             | CloneFlags::CLONE_NEWNS,
-    )
-    .is_err()
-    {
+    ];
+    let mut ok = false;
+    for flags in attempts {
+        if unshare(*flags).is_ok() {
+            ok = true;
+            break;
+        }
+    }
+    if !ok {
         return None;
     }
     let out = simple_exec_with_timeout(cmd, stdin, spec).await;

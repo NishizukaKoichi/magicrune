@@ -10,9 +10,9 @@ limits:
   cpu_ms: 5000
   memory_mb: 512
   wall_sec: 15
+  pids: 256
 grading:
   thresholds:
     green: "<=20"
     yellow: "21..=60"
     red: ">=61"
-

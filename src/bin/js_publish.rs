@@ -71,7 +71,11 @@ mod app {
         // Wait for response on run.res.<run_id>
         let res_subject = format!("run.res.{}", run_id);
         let mut sub = nc.subscribe(res_subject.clone()).await?;
-        let got = tokio::time::timeout(std::time::Duration::from_secs(5), sub.next())
+        let to_secs = std::env::var("JS_PUBLISH_TIMEOUT_SEC")
+            .ok()
+            .and_then(|s| s.parse::<u64>().ok())
+            .unwrap_or(5);
+        let got = tokio::time::timeout(std::time::Duration::from_secs(to_secs), sub.next())
             .await
             .map_err(|_| anyhow::anyhow!("timeout waiting for {}", res_subject))?;
         if let Some(m) = got {
