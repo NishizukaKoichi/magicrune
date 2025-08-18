@@ -17,7 +17,7 @@ default = ["std"]
 std = []
 wasm = []
 jet = ["dep:async-nats"]
-wasm_exec = ["dep:wasmtime"]
+wasm_exec = ["dep:wasmtime", "dep:wasmtime-wasi"]
 linux_native = ["dep:nix"]
 
 [dependencies]
@@ -31,6 +31,8 @@ wasmtime-wasi = { version = "15", optional = true }
 sha2 = "0.10"
 base64 = "0.22"
 nix = { version = "0.29", optional = true }
+anyhow = "1.0"
+futures-util = { version = "0.3", default-features = false, features = ["std"] }
 
 
 [target.'cfg(target_arch = "wasm32")'.dependencies]

@@ -34,5 +34,33 @@
 - `tests/acceptance.rs` で受入を自動化。NATS は外部依存のため、`tests/nats_smoke.rs` は未起動環境ではスキップ（`MAGICRUNE_REQUIRE_NATS=1` で厳格化可能）。
 - サンドボックス選択は既定で WASI。`linux_native` フィーチャ＋Linux ではネイティブ（ただし CI/ローカルの権限に応じてフォールバック）。
 
-以上により、個人開発でも SPEC/MASTER に整合した最小コストのループで継続開発できます。
+### JetStream スモーク（ローカル）
 
+ネットワークとNATSが利用可能な環境で以下を実行:
+
+1) コンシューマ起動（別ターミナル推奨）
+   - `cargo run --features jet --bin js_consumer`
+   - `NATS_URL` 既定: `127.0.0.1:4222`、`NATS_REQ_SUBJ` 既定: `run.req.default`
+
+2) パブリッシャでリクエスト送信＋返信受信
+   - `cargo run --features jet --bin js_publish -- samples/ok.json`
+
+MSRV=1.80 固定で `--features jet` を利用する場合、依存解決が rustc 1.81+ を要求する可能性があります。その場合の回避策:
+
+- 一時的に Rust 1.82 へ切替（推奨）: `rustup override set 1.82.0`（検証後 `rustup override unset`）
+- もしくは依存を MSRV 1.80 互換へピン止め（要ネット）:
+  - `cargo update -p url --precise 2.4.1`
+  - `cargo update -p ed25519-dalek --precise 2.1.1`
+
+どちらの方法でも `cargo build --features jet` が通ればスモーク可能です。
+
+#### 運用チューニング用の環境変数
+
+- `NATS_URL` / `NATS_REQ_SUBJ` / `NATS_STREAM` / `NATS_DURABLE`
+- `NATS_MAX_ACK_PENDING`（既定: 2048）
+- `NATS_ACK_WAIT_SEC`（既定: 30）
+- `MAGICRUNE_POLICY`（既定: `policies/default.policy.yml`）
+
+メトリクスは標準エラーに100件ごとに集計を出力（processed/dupes/reds）。
+
+以上により、個人開発でも SPEC/MASTER に整合した最小コストのループで継続開発できます。

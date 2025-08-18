@@ -10,6 +10,15 @@ use std::time::{Duration, Instant};
 use base64::Engine;
 use serde::{Deserialize, Serialize};
 
+// --- env helpers ------------------------------------------------------------
+#[inline]
+fn env_u64(key: &str, default: u64) -> u64 {
+    std::env::var(key)
+        .ok()
+        .and_then(|s| s.trim().parse::<u64>().ok())
+        .unwrap_or(default)
+}
+
 #[derive(Debug, Deserialize)]
 #[allow(dead_code)]
 struct SpellRequest {
@@ -142,7 +151,7 @@ fn sha256_hex(input: &[u8]) -> String {
 
 fn print_usage() {
     eprintln!(
-        "Usage: magicrune exec -f <request.json> [--policy <policy.yml>] [--timeout <secs>] [--seed <n>] [--out <result.json>] [--strict]"
+        "Usage:\n  magicrune exec -f <request.json> [--policy <policy.yml>] [--timeout <secs>] [--seed <n>] [--out <result.json>] [--strict]\n  magicrune consume [--url <nats_host:port>] [--subject <run.req.*>]"
     );
 }
 
@@ -164,13 +173,36 @@ impl Default for Thresholds {
 }
 
 // Minimal YAML value extractor (line-oriented). Assumes keys are unique.
-fn extract_yaml_scalar(content: &str, key: &str) -> Option<String> {
+fn extract_yaml_scalar_under(content: &str, section: &str, key: &str) -> Option<String> {
+    let mut in_section = false;
+    let mut section_indent: Option<usize> = None;
     for line in content.lines() {
-        let trimmed = line.trim();
-        if let Some(rest0) = trimmed.strip_prefix(key) {
-            let rest = rest0.trim();
-            let val = rest.trim_start_matches(':').trim();
-            return Some(val.trim_matches('"').to_string());
+        let raw = line;
+        let trimmed = raw.trim_end();
+        let indent = raw.chars().take_while(|c| c.is_whitespace()).count();
+        if trimmed.trim_start().starts_with('#') {
+            continue;
+        }
+        if trimmed.trim() == format!("{}:", section) {
+            in_section = true;
+            section_indent = Some(indent);
+            continue;
+        }
+        if in_section {
+            // If indentation drops back to or above section start, section ends
+            if let Some(si) = section_indent {
+                if indent <= si && !trimmed.trim().is_empty() {
+                    in_section = false;
+                }
+            }
+            if in_section {
+                let t = trimmed.trim();
+                if let Some(rest0) = t.strip_prefix(key) {
+                    let rest = rest0.trim();
+                    let val = rest.trim_start_matches(':').trim();
+                    return Some(val.trim_matches('"').to_string());
+                }
+            }
         }
     }
     None
@@ -181,11 +213,16 @@ fn load_thresholds_from_policy(path: &str) -> Thresholds {
         Ok(s) => s,
         Err(_) => return Thresholds::default(),
     };
-    // Try to find explicit grading.thresholds entries
-    // Fall back to defaults if missing.
-    let green = extract_yaml_scalar(&text, "green").unwrap_or_else(|| "<=20".to_string());
-    let yellow = extract_yaml_scalar(&text, "yellow").unwrap_or_else(|| "21..=60".to_string());
-    let red = extract_yaml_scalar(&text, "red").unwrap_or_else(|| ">=61".to_string());
+    // Look specifically under grading -> thresholds
+    let green = extract_yaml_scalar_under(&text, "thresholds", "green")
+        .or_else(|| extract_yaml_scalar_under(&text, "grading", "green"))
+        .unwrap_or_else(|| "<=20".to_string());
+    let yellow = extract_yaml_scalar_under(&text, "thresholds", "yellow")
+        .or_else(|| extract_yaml_scalar_under(&text, "grading", "yellow"))
+        .unwrap_or_else(|| "21..=60".to_string());
+    let red = extract_yaml_scalar_under(&text, "thresholds", "red")
+        .or_else(|| extract_yaml_scalar_under(&text, "grading", "red"))
+        .unwrap_or_else(|| ">=61".to_string());
     Thresholds { green, yellow, red }
 }
 
@@ -208,14 +245,36 @@ impl Default for PolicyLimits {
     }
 }
 
-fn extract_yaml_u64(content: &str, key: &str) -> Option<u64> {
+fn extract_yaml_u64_under(content: &str, section: &str, key: &str) -> Option<u64> {
+    let mut in_section = false;
+    let mut section_indent: Option<usize> = None;
     for line in content.lines() {
-        let trimmed = line.trim();
-        if let Some(rest0) = trimmed.strip_prefix(key) {
-            let rest = rest0.trim();
-            let val = rest.trim_start_matches(':').trim();
-            if let Ok(v) = u64::from_str(val.trim_matches('"')) {
-                return Some(v);
+        let raw = line;
+        let trimmed = raw.trim_end();
+        let indent = raw.chars().take_while(|c| c.is_whitespace()).count();
+        if trimmed.trim_start().starts_with('#') {
+            continue;
+        }
+        if trimmed.trim() == format!("{}:", section) {
+            in_section = true;
+            section_indent = Some(indent);
+            continue;
+        }
+        if in_section {
+            if let Some(si) = section_indent {
+                if indent <= si && !trimmed.trim().is_empty() {
+                    in_section = false;
+                }
+            }
+            if in_section {
+                let t = trimmed.trim();
+                if let Some(rest0) = t.strip_prefix(key) {
+                    let rest = rest0.trim();
+                    let val = rest.trim_start_matches(':').trim();
+                    if let Ok(v) = u64::from_str(val.trim_matches('"')) {
+                        return Some(v);
+                    }
+                }
             }
         }
     }
@@ -227,9 +286,9 @@ fn load_limits_from_policy(path: &str) -> PolicyLimits {
         Ok(s) => s,
         Err(_) => return PolicyLimits::default(),
     };
-    let wall_sec = extract_yaml_u64(&text, "wall_sec").unwrap_or(60);
-    let cpu_ms = extract_yaml_u64(&text, "cpu_ms").unwrap_or(5000);
-    let memory_mb = extract_yaml_u64(&text, "memory_mb").unwrap_or(512);
+    let wall_sec = extract_yaml_u64_under(&text, "limits", "wall_sec").unwrap_or(60);
+    let cpu_ms = extract_yaml_u64_under(&text, "limits", "cpu_ms").unwrap_or(5000);
+    let memory_mb = extract_yaml_u64_under(&text, "limits", "memory_mb").unwrap_or(512);
     PolicyLimits {
         wall_sec,
         cpu_ms,
@@ -279,6 +338,33 @@ fn main() {
     if args[0] == "--version" {
         println!("magicrune 0.1.0");
         std::process::exit(0);
+    }
+
+    if args[0] == "consume" {
+        // JetStream consumer mode (feature-gated)
+        #[cfg(feature = "jet")]
+        {
+            let url = args
+                .iter()
+                .position(|a| a == "--url")
+                .and_then(|i| args.get(i + 1).cloned())
+                .unwrap_or_else(|| env::var("NATS_URL").unwrap_or_else(|_| "127.0.0.1:4222".to_string()));
+            let subject = args
+                .iter()
+                .position(|a| a == "--subject")
+                .and_then(|i| args.get(i + 1).cloned())
+                .unwrap_or_else(|| env::var("NATS_REQ_SUBJ").unwrap_or_else(|_| "run.req.default".to_string()));
+            if let Err(e) = consume_entry(&url, &subject) {
+                eprintln!("consume error: {}", e);
+                std::process::exit(4);
+            }
+            return;
+        }
+        #[cfg(not(feature = "jet"))]
+        {
+            eprintln!("jet feature not enabled");
+            std::process::exit(4);
+        }
     }
 
     if args[0] != "exec" {
@@ -479,6 +565,8 @@ fn main() {
         .or_else(|| std::env::var("MAGICRUNE_POLICY").ok())
         .unwrap_or_else(|| "policies/default.policy.yml".to_string());
     let limits = load_limits_from_policy(&policy_path);
+    eprintln!("policy: using {} (wall_sec={}, cpu_ms={}, memory_mb={})", 
+        &policy_path, limits.wall_sec, limits.cpu_ms, limits.memory_mb);
     if net_intent && req.allow_net.is_empty() {
         eprintln!("policy: network is not allowed (allow_net is empty)");
         std::process::exit(3);
@@ -514,6 +602,11 @@ fn main() {
     if !req.files.is_empty() {
         for f in &req.files {
             let p = Path::new(&f.path);
+            // Basic path sanity: must be absolute and no parent traversal
+            if !p.is_absolute() || f.path.contains("..") {
+                eprintln!("schema: file.path must be absolute and must not contain '..'");
+                std::process::exit(1);
+            }
             let allowed_tmp = p.starts_with("/tmp/");
             let mut allowed = allowed_tmp; // default allow only /tmp/**
             if !req.allow_fs.is_empty() {
@@ -562,7 +655,9 @@ fn main() {
     let mut duration_ms: u64 = 0;
     if std::env::var("MAGICRUNE_DRY_RUN").ok().as_deref() != Some("1") && !req.cmd.trim().is_empty()
     {
-        match detect_sandbox() {
+        let sb = detect_sandbox();
+        eprintln!("sandbox: {:?}", sb);
+        match sb {
             SandboxKind::Linux => {
                 let started = Instant::now();
                 let mut child = Command::new("bash")
@@ -696,4 +791,296 @@ fn main() {
     }
 
     std::process::exit(final_exit);
+}
+
+#[cfg(feature = "jet")]
+fn consume_entry(url: &str, subject: &str) -> anyhow::Result<()> {
+    use futures_util::StreamExt;
+    use std::collections::{HashSet, VecDeque};
+    let rt = tokio::runtime::Runtime::new()?;
+    rt.block_on(async move {
+        let nc = bootstrapped::jet::jet_impl::connect(&format!("nats://{}", url))
+            .await
+            .map_err(|e| anyhow::anyhow!(e.to_string()))?;
+        fn env_u64(key: &str, default: u64) -> u64 { std::env::var(key).ok().and_then(|s| s.parse::<u64>().ok()).unwrap_or(default) }
+        fn env_i64(key: &str, default: i64) -> i64 { std::env::var(key).ok().and_then(|s| s.parse::<i64>().ok()).unwrap_or(default) }
+        use async_nats::jetstream::{self, stream::{Config, RetentionPolicy, StorageType}};
+        let js = jetstream::new(nc.clone());
+        // Ensure JetStream stream exists for dedupe window
+        {
+            let name = std::env::var("NATS_STREAM").unwrap_or_else(|_| "RUN".to_string());
+            let dup_sec = env_u64("NATS_DUP_WINDOW_SEC", 120);
+            let cfg = Config {
+                name: name.clone(),
+                subjects: vec![subject.to_string()],
+                retention: RetentionPolicy::Limits,
+                max_consumers: -1,
+                max_messages: -1,
+                max_bytes: -1,
+                duplicate_window: std::time::Duration::from_secs(dup_sec),
+                storage: StorageType::File,
+                ..Default::default()
+            };
+            if js.get_stream(&name).await.is_err() {
+                let _ = js.create_stream(cfg).await;
+            }
+
+            // Ensure a durable consumer exists
+            use async_nats::jetstream::consumer::{self, pull};
+            let durable = std::env::var("NATS_DURABLE").unwrap_or_else(|_| "RUN_WORKER".to_string());
+            let max_ack_pending = std::env::var("NATS_MAX_ACK_PENDING").ok().and_then(|s| s.parse::<i64>().ok()).unwrap_or(2048);
+            let ack_wait_sec = std::env::var("NATS_ACK_WAIT_SEC").ok().and_then(|s| s.parse::<u64>().ok()).unwrap_or(30);
+            let c_cfg = pull::Config {
+                durable_name: Some(durable.clone()),
+                ack_policy: consumer::AckPolicy::Explicit,
+                max_ack_pending,
+                ack_wait: std::time::Duration::from_secs(ack_wait_sec),
+                ..Default::default()
+            };
+            if let Ok(stream) = js.get_stream(&name).await {
+                if stream.get_consumer::<pull::Config>(&durable).await.is_err() {
+                    let _ = stream.create_consumer(c_cfg.clone()).await;
+                }
+                // Switch to JetStream pull consumption
+                let consumer = stream.get_consumer::<pull::Config>(&durable).await.map_err(|e| anyhow::anyhow!(e.to_string()))?;
+                let mut messages = consumer.messages().await.map_err(|e| anyhow::anyhow!(e.to_string()))?;
+
+                // Dedupe caches and simple metrics
+                let mut seen: HashSet<String> = HashSet::new();
+                let mut order: VecDeque<String> = VecDeque::new();
+                let dedupe_max = std::env::var("MAGICRUNE_DEDUPE_MAX").ok().and_then(|s| s.parse::<usize>().ok()).unwrap_or(1024);
+                let metrics_every = env_u64("MAGICRUNE_METRICS_EVERY", 100);
+                let mut count_total: u64 = 0;
+                let mut count_dupe: u64 = 0;
+                let mut count_red: u64 = 0;
+
+                while let Some(Ok(msg)) = messages.next().await {
+                    count_total += 1;
+                    let id = msg.headers.as_ref().and_then(|h| h.get("Nats-Msg-Id")).map(|v| v.to_string()).unwrap_or_else(|| bootstrapped::jet::compute_msg_id(msg.payload.as_ref()));
+                    if seen.contains(&id) { count_dupe += 1; let _ = msg.ack().await; continue; }
+                    if seen.insert(id.clone()) { order.push_back(id); if order.len() > dedupe_max { if let Some(old)=order.pop_front(){ seen.remove(&old);} } }
+
+                    let payload = msg.payload.to_vec();
+                    let req_val: serde_json::Value = match serde_json::from_slice(&payload) { Ok(v) => v, Err(_) => { let _=msg.ack().await; continue; } };
+                    let mut seed_le = 0u64.to_le_bytes().to_vec();
+                    if let Some(s) = req_val.get("seed").and_then(|x| x.as_u64()) { seed_le = s.to_le_bytes().to_vec(); }
+                    let mut all = payload.clone(); all.extend_from_slice(&seed_le);
+                    let run_id = format!("r_{}", sha256_hex(&all));
+
+                    let req: SpellRequest = match serde_json::from_slice(&payload) { Ok(r) => r, Err(_) => { let _=msg.ack().await; continue; } };
+
+                    // Minimal grading and policy
+                    let cmd_l = req.cmd.to_lowercase();
+                    let mut risk_score: u32 = 0;
+                    let net_intent = cmd_l.contains("curl ") || cmd_l.contains("wget ") || cmd_l.contains("http://") || cmd_l.contains("https://");
+                    let policy_path = std::env::var("MAGICRUNE_POLICY").unwrap_or_else(|_| "policies/default.policy.yml".to_string());
+                    let limits = load_limits_from_policy(&policy_path);
+                    if net_intent && req.allow_net.is_empty() {
+                        let res = SpellResult { run_id: run_id.clone(), verdict: "red".into(), risk_score: 80, exit_code: 20, duration_ms: 0, stdout_trunc: false, sbom_attestation: None };
+                        let subj = format!("run.res.{}", run_id);
+                        let _ = js.publish(subj, serde_json::to_vec(&res)?.into()).await;
+                        count_red += 1;
+                        let _ = msg.ack().await; continue;
+                    }
+                    if cmd_l.contains("ssh ") { risk_score += 30; }
+
+                    // Files
+                    let mut fs_violation = false;
+                    for f in &req.files {
+                        let p = std::path::Path::new(&f.path);
+                        if !p.is_absolute() || f.path.contains("..") { fs_violation = true; break; }
+                        let allowed_tmp = p.starts_with("/tmp/");
+                        let mut allowed = allowed_tmp;
+                        if !req.allow_fs.is_empty() { for pat in &req.allow_fs { if pat=="/tmp/**" && allowed_tmp { allowed = true; break; } if pat==&f.path { allowed = true; break; } } }
+                        if !allowed { fs_violation = true; break; }
+                        if let Some(dir) = p.parent() { let _ = std::fs::create_dir_all(dir); }
+                        if !f.content_b64.is_empty() { if let Ok(bytes) = base64::engine::general_purpose::STANDARD.decode(&f.content_b64) { let _ = std::fs::write(p, &bytes); } } else { let _ = std::fs::write(p, []); }
+                    }
+                    if fs_violation {
+                        let res = SpellResult { run_id: run_id.clone(), verdict: "red".into(), risk_score: risk_score.max(80), exit_code: 20, duration_ms: 0, stdout_trunc: false, sbom_attestation: None };
+                        let subj = format!("run.res.{}", run_id);
+                        let _ = js.publish(subj, serde_json::to_vec(&res)?.into()).await;
+                        count_red += 1;
+                        let _ = msg.ack().await; continue;
+                    }
+
+                    // Execute with wall timeout
+                    let mut exit_code = 0i32; let mut duration_ms: u64 = 0;
+                    if std::env::var("MAGICRUNE_DRY_RUN").ok().as_deref() != Some("1") && !req.cmd.trim().is_empty() {
+                        let started = std::time::Instant::now();
+                        let mut child = std::process::Command::new("bash").arg("-lc").arg(&req.cmd).stdin(std::process::Stdio::piped()).stdout(std::process::Stdio::piped()).stderr(std::process::Stdio::piped()).spawn()?;
+                        if !req.stdin.is_empty() { if let Some(mut sin) = child.stdin.take() { use std::io::Write as _; let _ = sin.write_all(req.stdin.as_bytes()); } }
+                        let deadline = std::time::Instant::now() + std::time::Duration::from_secs(limits.wall_sec);
+                        loop {
+                            if let Ok(Some(status)) = child.try_wait() { let _ = child.wait_with_output(); duration_ms = started.elapsed().as_millis() as u64; if let Some(c) = status.code() { exit_code = c; } break; }
+                            if std::time::Instant::now() >= deadline { let _ = child.kill(); duration_ms = started.elapsed().as_millis() as u64; exit_code = 20; break; }
+                            std::thread::sleep(std::time::Duration::from_millis(25));
+                        }
+                    }
+
+                    let thresholds = load_thresholds_from_policy(&policy_path);
+                    let verdict = decide_verdict_from_thresholds(risk_score, &thresholds);
+                    let res = SpellResult { run_id: run_id.clone(), verdict: verdict.to_string(), risk_score, exit_code, duration_ms, stdout_trunc: false, sbom_attestation: None };
+                    let subj = format!("run.res.{}", run_id);
+                    let _ = js.publish(subj.clone(), serde_json::to_vec(&res)?.into()).await;
+                    let _ = msg.ack().await;
+
+                    let ack_subj = format!("run.ack.{}", run_id);
+                    let mut ack = nc.subscribe(ack_subj).await?;
+                    let ack_ack_wait = env_u64("ACK_ACK_WAIT_SEC", 2);
+                    let _ = tokio::time::timeout(std::time::Duration::from_secs(ack_ack_wait), ack.next()).await;
+                    if metrics_every > 0 && count_total % metrics_every == 0 {
+                        eprintln!("magicrune consume: processed={} dupes={} reds={}", count_total, count_dupe, count_red);
+                    }
+                }
+                return Ok(());
+            }
+        }
+        let mut sub = nc.subscribe(subject.to_string()).await?;
+
+        let mut seen: HashSet<String> = HashSet::new();
+        let mut order: VecDeque<String> = VecDeque::new();
+        const DEDUPE_MAX: usize = 1024;
+
+        while let Some(msg) = sub.next().await {
+            let id = msg
+                .headers
+                .as_ref()
+                .and_then(|h| h.get("Nats-Msg-Id"))
+                .map(|v| v.to_string())
+                .unwrap_or_else(|| bootstrapped::jet::compute_msg_id(&msg.payload));
+            if seen.contains(&id) {
+                continue;
+            }
+            if seen.insert(id.clone()) {
+                order.push_back(id);
+                if order.len() > DEDUPE_MAX {
+                    if let Some(old) = order.pop_front() {
+                        seen.remove(&old);
+                    }
+                }
+            }
+
+            let req_val: serde_json::Value = match serde_json::from_slice(&msg.payload) {
+                Ok(v) => v,
+                Err(_) => continue,
+            };
+            let mut seed_le = 0u64.to_le_bytes().to_vec();
+            if let Some(s) = req_val.get("seed").and_then(|x| x.as_u64()) {
+                seed_le = s.to_le_bytes().to_vec();
+            }
+            let mut all = msg.payload.to_vec();
+            all.extend_from_slice(&seed_le);
+            let run_id = format!("r_{}", sha256_hex(&all));
+
+            let req: SpellRequest = match serde_json::from_slice(&msg.payload) {
+                Ok(r) => r,
+                Err(_) => continue,
+            };
+
+            // Minimal grading and policy checks
+            let cmd_l = req.cmd.to_lowercase();
+            let mut risk_score: u32 = 0;
+            let net_intent = cmd_l.contains("curl ")
+                || cmd_l.contains("wget ")
+                || cmd_l.contains("http://")
+                || cmd_l.contains("https://");
+            let policy_path = std::env::var("MAGICRUNE_POLICY")
+                .unwrap_or_else(|_| "policies/default.policy.yml".to_string());
+            let limits = load_limits_from_policy(&policy_path);
+            if net_intent && req.allow_net.is_empty() {
+                let res = SpellResult {
+                    run_id: run_id.clone(),
+                    verdict: "red".into(),
+                    risk_score: 80,
+                    exit_code: 20,
+                    duration_ms: 0,
+                    stdout_trunc: false,
+                    sbom_attestation: None,
+                };
+                let subj = format!("run.res.{}", run_id);
+                let _ = nc.publish(subj, serde_json::to_vec(&res)?.into()).await;
+                continue;
+            }
+            if cmd_l.contains("ssh ") { risk_score += 30; }
+
+            // Materialize files subject to allow_fs
+            let mut fs_violation = false;
+            for f in &req.files {
+                let p = std::path::Path::new(&f.path);
+                if !p.is_absolute() || f.path.contains("..") { fs_violation = true; break; }
+                let allowed_tmp = p.starts_with("/tmp/");
+                let mut allowed = allowed_tmp;
+                if !req.allow_fs.is_empty() {
+                    for pat in &req.allow_fs {
+                        if pat == "/tmp/**" && allowed_tmp { allowed = true; break; }
+                        if pat == &f.path { allowed = true; break; }
+                    }
+                }
+                if !allowed { fs_violation = true; break; }
+                if let Some(dir) = p.parent() { let _ = std::fs::create_dir_all(dir); }
+                if !f.content_b64.is_empty() {
+                    if let Ok(bytes) = base64::engine::general_purpose::STANDARD.decode(&f.content_b64) {
+                        let _ = std::fs::write(p, &bytes);
+                    }
+                } else { let _ = std::fs::write(p, []); }
+            }
+            if fs_violation {
+                let res = SpellResult {
+                    run_id: run_id.clone(), verdict: "red".into(), risk_score: risk_score.max(80),
+                    exit_code: 20, duration_ms: 0, stdout_trunc: false, sbom_attestation: None,
+                };
+                let subj = format!("run.res.{}", run_id);
+                let _ = nc.publish(subj, serde_json::to_vec(&res)?.into()).await;
+                continue;
+            }
+
+            // Execute with wall timeout
+            let mut exit_code = 0i32;
+            let mut duration_ms: u64 = 0;
+            if std::env::var("MAGICRUNE_DRY_RUN").ok().as_deref() != Some("1") && !req.cmd.trim().is_empty() {
+                let started = std::time::Instant::now();
+                let mut child = std::process::Command::new("bash")
+                    .arg("-lc").arg(&req.cmd)
+                    .stdin(std::process::Stdio::piped())
+                    .stdout(std::process::Stdio::piped())
+                    .stderr(std::process::Stdio::piped())
+                    .spawn()?;
+                if !req.stdin.is_empty() {
+                    if let Some(mut sin) = child.stdin.take() {
+                        use std::io::Write as _;
+                        let _ = sin.write_all(req.stdin.as_bytes());
+                    }
+                }
+                let deadline = std::time::Instant::now() + std::time::Duration::from_secs(limits.wall_sec);
+                loop {
+                    if let Ok(Some(status)) = child.try_wait() {
+                        let _ = child.wait_with_output();
+                        duration_ms = started.elapsed().as_millis() as u64;
+                        if let Some(c) = status.code() { exit_code = c; }
+                        break;
+                    }
+                    if std::time::Instant::now() >= deadline {
+                        let _ = child.kill();
+                        duration_ms = started.elapsed().as_millis() as u64;
+                        exit_code = 20; break;
+                    }
+                    std::thread::sleep(std::time::Duration::from_millis(25));
+                }
+            }
+
+            // Verdict mapping
+            let thresholds = load_thresholds_from_policy(&policy_path);
+            let verdict = decide_verdict_from_thresholds(risk_score, &thresholds);
+            let res = SpellResult { run_id: run_id.clone(), verdict: verdict.to_string(), risk_score, exit_code, duration_ms, stdout_trunc: false, sbom_attestation: None };
+            let subj = format!("run.res.{}", run_id);
+            let _ = nc.publish(subj.clone(), serde_json::to_vec(&res)?.into()).await;
+
+            // ack-ack wait
+            let ack_subj = format!("run.ack.{}", run_id);
+            let mut ack = nc.subscribe(ack_subj).await?;
+            let _ = tokio::time::timeout(std::time::Duration::from_secs(2), ack.next()).await;
+        }
+        Ok(())
+    })
 }

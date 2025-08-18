@@ -1,17 +1,14 @@
-title = "gitleaks config"
-
-[extend]
-useDefault = true
+title = "MagicRune Gitleaks Rules"
 
 [allowlist]
-description = "Global allow list"
+description = "Allow sample fixtures and benign local endpoints"
 paths = [
-  ".*\\.toml$",
-  ".*\\.lock$",
-  ".*\\.sum$",
-  "\\.gitleaks\\.toml$",
-  "deny\\.toml$",
-  "\\.cargo/config\\.toml$"
+  '''^samples/.*$''',
+  '''^policies/.*\.ya?ml$'''
+]
+regexes = [
+  '''NATS_URL\s*=\s*["']?nats://localhost:\d+["']?''',
+  '''NATS_(STREAM|DURABLE)\s*=\s*["']?(RUN|RUN_WORKER)["']?'''
 ]
 
 [[rules]]

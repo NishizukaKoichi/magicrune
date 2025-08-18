@@ -86,7 +86,7 @@ pub mod wasm_impl {
             Err(_) => return SandboxOutcome::empty(),
         };
         // Try to call _start if present
-        if let Ok(start) = instance.get_typed_func::<(), (), _>(&mut store, "_start") {
+        if let Ok(start) = instance.get_typed_func::<(), ()>(&mut store, "_start") {
             let _ = start.call(&mut store, ());
         }
         SandboxOutcome::empty()

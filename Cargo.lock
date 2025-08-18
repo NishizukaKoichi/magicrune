@@ -188,9 +188,11 @@ dependencies = [
 name = "bootstrapped"
 version = "0.1.0"
 dependencies = [
+ "anyhow",
  "async-nats",
  "async-trait",
  "base64 0.22.1",
+ "futures-util",
  "js-sys",
  "nix",
  "serde",

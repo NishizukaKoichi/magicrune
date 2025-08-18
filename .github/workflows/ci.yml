@@ -8,38 +8,56 @@ permissions:
   id-token: write
 
 jobs:
-  test-build:
+  msrv-check:
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v4
-      - uses: dtolnay/rust-toolchain@stable
+      - name: Install Rust 1.80 (MSRV)
+        run: |
+          rustup toolchain install 1.80.0 --profile minimal
+          rustup default 1.80.0
+          rustup override set 1.80.0
       - uses: Swatinem/rust-cache@v2
-
-      - name: Test (wasm fallback)
+      - name: Test (Wasm fallback)
         run: |
           export MAGICRUNE_FORCE_WASM=1
           cargo test --workspace --locked
-
-      - name: Build (linux-gnu host)
+      - name: Build (host)
         run: cargo build --release --workspace --locked
 
+  cross-build:
+    runs-on: ubuntu-24.04
+    needs: msrv-check
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install Rust nightly (for cross & edition2024)
+        run: |
+          rustup toolchain install nightly --profile minimal
+          rustup default nightly
+          rustup override set nightly
+          rustup component add rustfmt clippy --toolchain nightly
+      - name: Cache cargo and target (nightly)
+        uses: actions/cache@v4
+        with:
+          path: |
+            target
+            ~/.cargo/registry
+            ~/.cargo/git
+          key: rust-${{ runner.os }}-nightly-${{ hashFiles('**/Cargo.lock') }}
       - name: Install cross
-        run: cargo install cross --git https://github.com/cross-rs/cross
+        run: cargo install cross --git https://github.com/cross-rs/cross --rev e281947c
       - name: Build musl (x86_64)
         run: cross build --release --target x86_64-unknown-linux-musl
       - name: Build musl (aarch64)
         run: cross build --release --target aarch64-unknown-linux-musl
-
       - name: Generate SBOM (Syft)
         uses: anchore/sbom-action@v0
         with:
           output-file: sbom.spdx.json
-
       - name: Install cosign
         uses: sigstore/cosign-installer@v3
       - name: Sign SBOM (OIDC keyless)
         run: cosign sign-blob --yes --bundle sbom.spdx.json
-
       - name: Upload artifacts
         uses: actions/upload-artifact@v4
         with:
