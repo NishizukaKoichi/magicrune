@@ -344,7 +344,7 @@ async fn simple_exec_with_timeout(cmd: &str, stdin: &[u8], spec: &SandboxSpec) -
                 #[cfg(all(target_os = "linux", feature = "native_sandbox"))]
                 {
                     if std::env::var("MAGICRUNE_SECCOMP").ok().as_deref() == Some("1") {
-                        if let Err(e) = super::seccomp_minimal_allow() {
+                        if let Err(e) = seccomp_minimal_allow() {
                             eprintln!("WARN: seccomp enable failed: {} (fallback)", e);
                         }
                     }
