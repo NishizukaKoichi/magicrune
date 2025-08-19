@@ -40,6 +40,8 @@ jobs:
       - name: Update lockfile (prune unused)
         run: cargo update -q
       
+      - name: Install latest cargo-audit
+        run: cargo install cargo-audit --locked --force
       - name: Security audit (no inline ignore)
         run: cargo audit --locked --color always
       
