@@ -2,7 +2,7 @@
 
 This project treats secrets and sandboxing seriously.
 
-- MSRV: 1.80, Edition 2021
+- MSRV: 1.82, Edition 2021
 - Gitleaks: Blocking with a minimal allowlist (samples/, policies/*.yml, NATS localhost)
 - SBOM: Generated via Syft, signed with cosign (OIDC keyless), verified in CI
 
