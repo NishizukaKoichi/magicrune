@@ -114,6 +114,10 @@ jobs:
           toolchain: 1.82.0
           components: rustfmt, clippy
       - uses: Swatinem/rust-cache@v2
+      - name: Install system dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libseccomp-dev
       - name: Install tarpaulin
         run: cargo install cargo-tarpaulin --locked --version 0.27.3
       - name: Run coverage (fail < 80%)
