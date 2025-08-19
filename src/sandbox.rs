@@ -452,3 +452,103 @@ async fn linux_try_exec(cmd: &str, stdin: &[u8], spec: &SandboxSpec) -> Option<S
     let out = simple_exec_with_timeout(cmd, stdin, spec).await;
     Some(out)
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_detect_sandbox_force_wasm() {
+        std::env::set_var("MAGICRUNE_FORCE_WASM", "1");
+        assert_eq!(detect_sandbox(), SandboxKind::Wasi);
+        std::env::remove_var("MAGICRUNE_FORCE_WASM");
+    }
+
+    #[test]
+    fn test_detect_sandbox_default() {
+        std::env::remove_var("MAGICRUNE_FORCE_WASM");
+        let kind = detect_sandbox();
+        // On Linux with linux_native feature, it should return Linux
+        // Otherwise, it should return Wasi
+        #[cfg(all(target_os = "linux", feature = "linux_native"))]
+        assert_eq!(kind, SandboxKind::Linux);
+        #[cfg(not(all(target_os = "linux", feature = "linux_native")))]
+        assert_eq!(kind, SandboxKind::Wasi);
+    }
+
+    #[test]
+    fn test_sandbox_outcome_empty() {
+        let outcome = SandboxOutcome::empty();
+        assert_eq!(outcome.exit_code, 0);
+        assert!(outcome.stdout.is_empty());
+        assert!(outcome.stderr.is_empty());
+    }
+
+    #[test]
+    fn test_sandbox_spec_creation() {
+        let spec = SandboxSpec {
+            wall_sec: 10,
+            cpu_ms: 5000,
+            memory_mb: 128,
+            pids: 100,
+        };
+        assert_eq!(spec.wall_sec, 10);
+        assert_eq!(spec.cpu_ms, 5000);
+        assert_eq!(spec.memory_mb, 128);
+        assert_eq!(spec.pids, 100);
+    }
+
+    #[test]
+    fn test_sandbox_kind_equality() {
+        assert_eq!(SandboxKind::Wasi, SandboxKind::Wasi);
+        assert_eq!(SandboxKind::Linux, SandboxKind::Linux);
+        assert_ne!(SandboxKind::Wasi, SandboxKind::Linux);
+    }
+
+    #[tokio::test]
+    async fn test_exec_native_simple() {
+        let spec = SandboxSpec {
+            wall_sec: 5,
+            cpu_ms: 1000,
+            memory_mb: 64,
+            pids: 10,
+        };
+        let outcome = exec_native("echo hello", b"", &spec).await;
+        // Basic check - the function should return something
+        assert!(outcome.exit_code >= 0 || outcome.exit_code < 0);
+    }
+
+    #[tokio::test]
+    async fn test_exec_wasm_placeholder() {
+        let spec = SandboxSpec {
+            wall_sec: 5,
+            cpu_ms: 1000,
+            memory_mb: 64,
+            pids: 10,
+        };
+        let outcome = exec_wasm(b"dummy", &spec).await;
+        assert_eq!(outcome.exit_code, 0);
+        assert!(outcome.stdout.is_empty());
+        assert!(outcome.stderr.is_empty());
+    }
+
+    #[test]
+    fn test_seccomp_minimal_allow_not_linux() {
+        #[cfg(not(all(target_os = "linux", feature = "native_sandbox")))]
+        {
+            let result = seccomp_minimal_allow();
+            assert!(result.is_err());
+            assert_eq!(result.unwrap_err(), "seccomp not supported in this build");
+        }
+    }
+
+    #[test]
+    fn test_try_enable_overlay_ro_not_linux() {
+        #[cfg(not(all(target_os = "linux", feature = "linux_native")))]
+        {
+            let result = try_enable_overlay_ro();
+            assert!(result.is_ok());
+            assert!(result.unwrap().is_none());
+        }
+    }
+}

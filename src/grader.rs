@@ -46,3 +46,131 @@ pub fn grade(req: &SpellRequest, policy: &PolicyDoc) -> GradeOutcome {
         verdict: verdict.to_string(),
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::schema::{GradingCfg, GradingThresholds};
+
+    #[test]
+    fn test_grade_low_risk() {
+        let req = SpellRequest {
+            allow_net: None,
+            allow_fs: Some(vec!["/tmp/**".to_string()]),
+            ..Default::default()
+        };
+        let policy = PolicyDoc::default();
+        
+        let outcome = grade(&req, &policy);
+        assert_eq!(outcome.risk_score, 0);
+        assert_eq!(outcome.verdict, "green");
+    }
+
+    #[test]
+    fn test_grade_medium_risk_network() {
+        let req = SpellRequest {
+            allow_net: Some(vec!["localhost".to_string()]),
+            allow_fs: None,
+            ..Default::default()
+        };
+        let policy = PolicyDoc::default();
+        
+        let outcome = grade(&req, &policy);
+        assert_eq!(outcome.risk_score, 40);
+        assert_eq!(outcome.verdict, "yellow");
+    }
+
+    #[test]
+    fn test_grade_medium_risk_filesystem() {
+        let req = SpellRequest {
+            allow_net: None,
+            allow_fs: Some(vec!["/home/user".to_string()]),
+            ..Default::default()
+        };
+        let policy = PolicyDoc::default();
+        
+        let outcome = grade(&req, &policy);
+        assert_eq!(outcome.risk_score, 20);
+        assert_eq!(outcome.verdict, "green");
+    }
+
+    #[test]
+    fn test_grade_high_risk() {
+        let req = SpellRequest {
+            allow_net: Some(vec!["example.com".to_string(), "google.com".to_string()]),
+            allow_fs: Some(vec!["/home".to_string(), "/etc".to_string()]),
+            ..Default::default()
+        };
+        let policy = PolicyDoc::default();
+        
+        let outcome = grade(&req, &policy);
+        assert_eq!(outcome.risk_score, 60);
+        assert_eq!(outcome.verdict, "yellow");
+    }
+
+    #[test]
+    fn test_grade_very_high_risk() {
+        let req = SpellRequest {
+            allow_net: Some(vec!["0.0.0.0".to_string()]),
+            allow_fs: Some(vec!["/".to_string()]),
+            ..Default::default()
+        };
+        let policy = PolicyDoc::default();
+        
+        let outcome = grade(&req, &policy);
+        assert_eq!(outcome.risk_score, 60);
+        assert_eq!(outcome.verdict, "yellow");
+    }
+
+    #[test]
+    fn test_grade_with_custom_policy() {
+        let req = SpellRequest {
+            allow_net: Some(vec!["localhost".to_string()]),
+            allow_fs: None,
+            ..Default::default()
+        };
+        
+        let policy = PolicyDoc {
+            version: 1,
+            grading: Some(GradingCfg {
+                thresholds: GradingThresholds {
+                    green: "<=10".to_string(),
+                    yellow: "11..=50".to_string(),
+                    red: ">=51".to_string(),
+                },
+            }),
+        };
+        
+        let outcome = grade(&req, &policy);
+        assert_eq!(outcome.risk_score, 40);
+        assert_eq!(outcome.verdict, "yellow");
+    }
+
+    #[test]
+    fn test_grade_empty_network_list() {
+        let req = SpellRequest {
+            allow_net: Some(vec![]),
+            allow_fs: None,
+            ..Default::default()
+        };
+        let policy = PolicyDoc::default();
+        
+        let outcome = grade(&req, &policy);
+        assert_eq!(outcome.risk_score, 0);
+        assert_eq!(outcome.verdict, "green");
+    }
+
+    #[test]
+    fn test_grade_tmp_only_filesystem() {
+        let req = SpellRequest {
+            allow_net: None,
+            allow_fs: Some(vec!["/tmp/**".to_string(), "/tmp/**".to_string()]),
+            ..Default::default()
+        };
+        let policy = PolicyDoc::default();
+        
+        let outcome = grade(&req, &policy);
+        assert_eq!(outcome.risk_score, 0);
+        assert_eq!(outcome.verdict, "green");
+    }
+}
