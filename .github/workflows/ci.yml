@@ -62,17 +62,22 @@ jobs:
           output-file: sbom.spdx.json
       - name: Install cosign
         uses: sigstore/cosign-installer@v3
-      - name: Sign SBOM (OIDC keyless)
+      - name: Sign SBOM (OIDC keyless, emit bundle)
         env:
           COSIGN_EXPERIMENTAL: 1
         run: |
           cosign version || true
-          cosign sign-blob --yes --output-signature sbom.spdx.json.sig sbom.spdx.json
-      - name: Verify SBOM signature
+          cosign sign-blob --yes \
+            --bundle sbom.spdx.json.bundle \
+            --output-signature sbom.spdx.json.sig \
+            sbom.spdx.json
+      - name: Verify SBOM signature (bundle)
         env:
           COSIGN_EXPERIMENTAL: 1
         run: |
-          cosign verify-blob --signature sbom.spdx.json.sig sbom.spdx.json
+          cosign verify-blob \
+            --bundle sbom.spdx.json.bundle \
+            sbom.spdx.json
       - name: Upload artifacts
         uses: actions/upload-artifact@v4
         with:
