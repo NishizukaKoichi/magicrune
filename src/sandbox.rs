@@ -63,6 +63,7 @@ pub async fn exec_wasm(_wasm_bytes: &[u8], _spec: &SandboxSpec) -> SandboxOutcom
 #[cfg(all(target_os = "linux", feature = "native_sandbox"))]
 fn seccomp_minimal_allow() -> Result<(), String> {
     use libseccomp::*;
+    use libseccomp::error::ScmpError;
     // Default deny
     let mut filter =
         ScmpFilterContext::new_filter(ScmpAction::Errno(1)).map_err(|e| format!("{:?}", e))?;
@@ -362,6 +363,8 @@ async fn simple_exec_with_timeout(cmd: &str, stdin: &[u8], spec: &SandboxSpec) -
             })
         };
         // Best-effort cgroups v2 (opt-in)
+        // TODO: cgroups module is not implemented yet
+        /*
         #[cfg(all(target_os = "linux", feature = "linux_native"))]
         if std::env::var("MAGICRUNE_CGROUPS").ok().as_deref() == Some("1") {
             match crate::sandbox::cgroups::try_enable_cgroups(
@@ -374,6 +377,7 @@ async fn simple_exec_with_timeout(cmd: &str, stdin: &[u8], spec: &SandboxSpec) -
                 Err(e) => eprintln!("[cgroups] WARN: enable failed, fallback: {}", e),
             }
         }
+        */
     }
     let mut child = match command
         .arg("-lc")
