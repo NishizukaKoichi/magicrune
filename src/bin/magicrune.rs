@@ -325,9 +325,15 @@ fn load_net_allow_from_policy(path: &str) -> Vec<String> {
                 if in_allow {
                     if indent <= allow_indent { in_allow = false; }
                     if line.starts_with("- ") {
-                        // expect '- host: "..."' or '- addr: "host:port"'
-                        if let Some(rest) = line.trim_start_matches("- ").split_once(':') {
-                            let v = rest.1.trim().trim_matches('"');
+                        let item = line.trim_start_matches("- ").trim();
+                        // Support both:
+                        // - host: "example.com:443" (keyed form)
+                        // - "example.com:443" (simple string form)
+                        if let Some((key, val)) = item.split_once(": ") {
+                            let v = val.trim().trim_matches('"');
+                            if !v.is_empty() { out.push(v.to_string()); }
+                        } else {
+                            let v = item.trim().trim_matches('"');
                             if !v.is_empty() { out.push(v.to_string()); }
                         }
                     }
@@ -350,7 +356,14 @@ fn extract_http_hosts(cmd: &str) -> Vec<String> {
             let end = rest.find(|c: char| c == '/' || c.is_whitespace()).unwrap_or(rest.len());
             let hostport = &rest[..end];
             if !hostport.is_empty() {
-                out.push(hostport.to_string());
+                let default_port = if *scheme == "https://" { "443" } else { "80" };
+                let (h, p) = hostport_parts(hostport);
+                let hp = if p.is_none() {
+                    format!("{}:{}", h, default_port)
+                } else {
+                    hostport.to_string()
+                };
+                out.push(hp);
             }
             i = start + end;
         }
@@ -799,8 +812,8 @@ fn main() {
         std::process::exit(3);
     }
 
-    if net_intent && req.allow_net.is_empty() {
-        risk_score += 40; // still reflected in risk if allowed via policy elsewhere
+    if net_intent && req.allow_net.is_empty() && load_net_allow_from_policy(&policy_path).is_empty() {
+        risk_score += 40;
     }
     if cmd_l.contains("ssh ") {
         risk_score += 30;
