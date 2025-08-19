@@ -37,17 +37,8 @@ libseccomp = { version = "0.3", optional = true }
 anyhow = "1.0"
 futures-util = { version = "0.3", default-features = false, features = ["std"] }
 
-[patch.crates-io]
-# Keep MSRV 1.80 by avoiding ICU 2.x through url/idna chain
 url = "=2.4.1"
 idna = "=0.4.0"
-# Additional guardrails to prevent accidental ICU 2.x resolution
-icu_collections = "=1.4.0"
-icu_locale_core = "=1.4.0"
-icu_normalizer = "=1.4.0"
-icu_properties = "=1.4.0"
-icu_locid = "=1.4.0"
-icu_provider = "=1.4.0"
 
 [target.'cfg(target_arch = "wasm32")'.dependencies]
 wasm-bindgen = "0.2"
