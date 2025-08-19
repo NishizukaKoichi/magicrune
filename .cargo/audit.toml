@@ -1,0 +1,11 @@
+[advisories]
+ignore = [
+  # RUSTSEC-2024-0421: idna 0.4.x requires upgrade to >=1.0.0,
+  # which drags url>=2.5 and ICU 2.x (rustc 1.82+). We keep MSRV=1.80.
+  # Temporary suppression; target to remove by 2025-12-31.
+  "RUSTSEC-2024-0421",
+]
+
+[output]
+quiet = false
+
