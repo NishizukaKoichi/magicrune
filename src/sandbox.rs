@@ -513,10 +513,8 @@ mod tests {
             memory_mb: 64,
             pids: 10,
         };
-        let outcome = exec_native("echo hello", b"", &spec).await;
-        // Basic check - the function should return something
-        // Check that exec_native returns a valid outcome
-        assert!(true); // Function should complete without panic
+        let _outcome = exec_native("echo hello", b"", &spec).await;
+        // Basic check - the function should return something without panic
     }
 
     #[tokio::test]
