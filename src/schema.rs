@@ -45,7 +45,6 @@ pub struct GradingCfg {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use serde_json::json;
 
     #[test]
     fn test_spell_request_default() {
