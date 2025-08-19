@@ -1,6 +1,11 @@
 [advisories]
 ignore = [
-  # "RUSTSEC-YYYY-XXXX", # reason = "…", until = "2025-12-31"
+  # Wasmtime advisory: Windows device filenames sandbox gap. We do not ship on Windows,
+  # and Wasmtime is optional; tracked for upgrade. Target: 2025-12-31.
+  "RUSTSEC-2024-0438",
+  # Wasmtime advisory: fd_renumber WASIp1 panic. Wasmtime is optional; tracked for upgrade.
+  # Target: 2025-12-31.
+  "RUSTSEC-2025-0046",
 ]
 informational_warnings = ["unmaintained", "unsound", "yanked"]
 

@@ -32,7 +32,8 @@ wasmtime = { version = "15", optional = true }
 wasmtime-wasi = { version = "15", optional = true }
 sha2 = "0.10"
 base64 = "0.22"
-nix = { version = "0.29", optional = true }
+# Enable gated modules used under linux_native (mount, sched)
+nix = { version = "0.29", optional = true, default-features = false, features = ["mount", "sched"] }
 libseccomp = { version = "0.3", optional = true }
 anyhow = "1.0"
 futures-util = { version = "0.3", default-features = false, features = ["std"] }
