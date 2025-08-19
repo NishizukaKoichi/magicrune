@@ -20,7 +20,15 @@ fn jetstream_dedup_and_retry() {
 
     // Start consumer (magicrune consume) with feature jet
     let mut consumer = Command::new("cargo")
-        .args(["run", "--features", "jet", "--bin", "magicrune", "--", "consume"])
+        .args([
+            "run",
+            "--features",
+            "jet",
+            "--bin",
+            "magicrune",
+            "--",
+            "consume",
+        ])
         .env("MAGICRUNE_TEST_DELAY_MS", "1500")
         .stdout(Stdio::null())
         .stderr(Stdio::null())
@@ -30,7 +38,15 @@ fn jetstream_dedup_and_retry() {
 
     // 1) Publish once -> expect success (response received)
     let st1 = Command::new("cargo")
-        .args(["run", "--features", "jet", "--bin", "js_publish", "--", "samples/ok.json"])
+        .args([
+            "run",
+            "--features",
+            "jet",
+            "--bin",
+            "js_publish",
+            "--",
+            "samples/ok.json",
+        ])
         .stdout(Stdio::piped())
         .stderr(Stdio::inherit())
         .status()
@@ -39,15 +55,25 @@ fn jetstream_dedup_and_retry() {
 
     // 2) Publish duplicate (same payload -> same Nats-Msg-Id) -> expect timeout / non-zero exit
     let st2 = Command::new("cargo")
-        .args(["run", "--features", "jet", "--bin", "js_publish", "--", "samples/ok.json"])
+        .args([
+            "run",
+            "--features",
+            "jet",
+            "--bin",
+            "js_publish",
+            "--",
+            "samples/ok.json",
+        ])
         .env("JS_PUBLISH_TIMEOUT_SEC", "3")
         .stdout(Stdio::piped())
         .stderr(Stdio::inherit())
         .status()
         .expect("run js_publish #2 (dupe)");
+    // Duplicate publish should be rejected; accept any non-zero (1/3/20 etc.)
     assert!(
         !st2.success(),
-        "duplicate publish should not produce new response (dedup)"
+        "Expected non-zero exit for duplicate payload, got {:?}",
+        st2.code()
     );
 
     // 3) Publish modified payload (add seed) -> expect success again
@@ -58,20 +84,26 @@ fn jetstream_dedup_and_retry() {
     let mut buf = String::new();
     if let Some(pos) = src.rfind('}') {
         buf.push_str(&src[..pos]);
-        buf.push_str(
-            if src[..pos].trim_end().ends_with(',') {
-                "\n  \"seed\": 42\n}"
-            } else {
-                "\n, \"seed\": 42\n}"
-            },
-        );
+        buf.push_str(if src[..pos].trim_end().ends_with(',') {
+            "\n  \"seed\": 42\n}"
+        } else {
+            "\n, \"seed\": 42\n}"
+        });
     } else {
         buf = src;
     }
     let mut f = std::fs::File::create(tmp_path).expect("create tmp json");
     f.write_all(buf.as_bytes()).unwrap();
     let st3 = Command::new("cargo")
-        .args(["run", "--features", "jet", "--bin", "js_publish", "--", tmp_path])
+        .args([
+            "run",
+            "--features",
+            "jet",
+            "--bin",
+            "js_publish",
+            "--",
+            tmp_path,
+        ])
         .env("JS_PUBLISH_TIMEOUT_SEC", "10")
         .stdout(Stdio::piped())
         .stderr(Stdio::inherit())
@@ -85,10 +117,21 @@ fn jetstream_dedup_and_retry() {
 #[test]
 fn jetstream_redelivery_with_skip_ack_once() {
     let require = std::env::var("MAGICRUNE_REQUIRE_NATS").ok() == Some("1".to_string());
-    if !require && !nats_reachable() { eprintln!("NATS not reachable; skipping jet_e2e"); return; }
+    if !require && !nats_reachable() {
+        eprintln!("NATS not reachable; skipping jet_e2e");
+        return;
+    }
     let metrics = "target/tmp/metrics.json";
     let mut consumer = Command::new("cargo")
-        .args(["run", "--features", "jet", "--bin", "magicrune", "--", "consume"])
+        .args([
+            "run",
+            "--features",
+            "jet",
+            "--bin",
+            "magicrune",
+            "--",
+            "consume",
+        ])
         .env("NATS_ACK_WAIT_SEC", "2")
         .env("MAGICRUNE_TEST_SKIP_ACK_ONCE", "1")
         .env("MAGICRUNE_METRICS_FILE", metrics)
@@ -99,7 +142,15 @@ fn jetstream_redelivery_with_skip_ack_once() {
     thread::sleep(Duration::from_secs(1));
 
     let st = Command::new("cargo")
-        .args(["run", "--features", "jet", "--bin", "js_publish", "--", "samples/ok.json"])
+        .args([
+            "run",
+            "--features",
+            "jet",
+            "--bin",
+            "js_publish",
+            "--",
+            "samples/ok.json",
+        ])
         .stdout(Stdio::piped())
         .stderr(Stdio::inherit())
         .status()
@@ -115,31 +166,85 @@ fn jetstream_redelivery_with_skip_ack_once() {
 #[test]
 fn error_net_violation_dedup() {
     let require = std::env::var("MAGICRUNE_REQUIRE_NATS").ok() == Some("1".to_string());
-    if !require && !nats_reachable() { eprintln!("NATS not reachable; skipping jet_e2e"); return; }
+    if !require && !nats_reachable() {
+        eprintln!("NATS not reachable; skipping jet_e2e");
+        return;
+    }
     let mut consumer = Command::new("cargo")
-        .args(["run", "--features", "jet", "--bin", "magicrune", "--", "consume"])
-        .stdout(Stdio::null()).stderr(Stdio::null()).spawn().expect("spawn consumer");
+        .args([
+            "run",
+            "--features",
+            "jet",
+            "--bin",
+            "magicrune",
+            "--",
+            "consume",
+        ])
+        .stdout(Stdio::null())
+        .stderr(Stdio::null())
+        .spawn()
+        .expect("spawn consumer");
     thread::sleep(Duration::from_secs(1));
     // First send deny_net -> should succeed (red verdict)
     let st1 = Command::new("cargo")
-        .args(["run","--features","jet","--bin","js_publish","--","samples/deny_net.json"]) 
-        .stdout(Stdio::piped()).status().expect("pub1");
+        .args([
+            "run",
+            "--features",
+            "jet",
+            "--bin",
+            "js_publish",
+            "--",
+            "samples/deny_net.json",
+        ])
+        .stdout(Stdio::piped())
+        .status()
+        .expect("pub1");
     assert!(st1.success());
     // Duplicate should time out due to dedupe
     let st2 = Command::new("cargo")
-        .args(["run","--features","jet","--bin","js_publish","--","samples/deny_net.json"]) 
-        .env("JS_PUBLISH_TIMEOUT_SEC","3").stdout(Stdio::piped()).status().expect("pub2");
-    assert!(!st2.success());
+        .args([
+            "run",
+            "--features",
+            "jet",
+            "--bin",
+            "js_publish",
+            "--",
+            "samples/deny_net.json",
+        ])
+        .env("JS_PUBLISH_TIMEOUT_SEC", "3")
+        .stdout(Stdio::piped())
+        .status()
+        .expect("pub2");
+    // Duplicate should time out due to dedupe; accept any non-zero (1/3/20 etc.)
+    assert!(
+        !st2.success(),
+        "Expected non-zero exit for duplicate payload, got {:?}",
+        st2.code()
+    );
     let _ = consumer.kill();
 }
 
 #[test]
 fn error_fs_violation_dedup() {
     let require = std::env::var("MAGICRUNE_REQUIRE_NATS").ok() == Some("1".to_string());
-    if !require && !nats_reachable() { eprintln!("NATS not reachable; skipping jet_e2e"); return; }
+    if !require && !nats_reachable() {
+        eprintln!("NATS not reachable; skipping jet_e2e");
+        return;
+    }
     let mut consumer = Command::new("cargo")
-        .args(["run", "--features", "jet", "--bin", "magicrune", "--", "consume"])
-        .stdout(Stdio::null()).stderr(Stdio::null()).spawn().expect("spawn consumer");
+        .args([
+            "run",
+            "--features",
+            "jet",
+            "--bin",
+            "magicrune",
+            "--",
+            "consume",
+        ])
+        .stdout(Stdio::null())
+        .stderr(Stdio::null())
+        .spawn()
+        .expect("spawn consumer");
     thread::sleep(Duration::from_secs(1));
     // craft fs violation request
     std::fs::create_dir_all("target/tmp").ok();
@@ -156,12 +261,17 @@ fn error_fs_violation_dedup() {
 }"#;
     std::fs::write(p, body).unwrap();
     let st1 = Command::new("cargo")
-        .args(["run","--features","jet","--bin","js_publish","--",p]) 
-        .stdout(Stdio::piped()).status().expect("pub1");
+        .args(["run", "--features", "jet", "--bin", "js_publish", "--", p])
+        .stdout(Stdio::piped())
+        .status()
+        .expect("pub1");
     assert!(st1.success());
     let st2 = Command::new("cargo")
-        .args(["run","--features","jet","--bin","js_publish","--",p]) 
-        .env("JS_PUBLISH_TIMEOUT_SEC","3").stdout(Stdio::piped()).status().expect("pub2");
+        .args(["run", "--features", "jet", "--bin", "js_publish", "--", p])
+        .env("JS_PUBLISH_TIMEOUT_SEC", "3")
+        .stdout(Stdio::piped())
+        .status()
+        .expect("pub2");
     assert!(!st2.success());
     let _ = consumer.kill();
 }

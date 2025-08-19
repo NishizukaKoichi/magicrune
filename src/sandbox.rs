@@ -64,8 +64,10 @@ pub async fn exec_wasm(_wasm_bytes: &[u8], _spec: &SandboxSpec) -> SandboxOutcom
 fn seccomp_minimal_allow() -> Result<(), String> {
     use libseccomp::*;
     // Default deny
-    let mut filter = ScmpFilterContext::new_filter(ScmpAction::Errno(1)).map_err(|e| format!("{:?}", e))?;
-    let arch = get_api() ; let _ = arch; // touch API to satisfy MSRV lint
+    let mut filter =
+        ScmpFilterContext::new_filter(ScmpAction::Errno(1)).map_err(|e| format!("{:?}", e))?;
+    let arch = get_api();
+    let _ = arch; // touch API to satisfy MSRV lint
     let allow = |f: &mut ScmpFilterContext, sys: ScmpSyscall| -> Result<(), ScmpError> {
         f.add_rule(ScmpAction::Allow, sys, &[])
     };
@@ -75,9 +77,12 @@ fn seccomp_minimal_allow() -> Result<(), String> {
         ScmpSyscall::from_name("write").unwrap(),
         ScmpSyscall::from_name("exit").unwrap(),
         ScmpSyscall::from_name("exit_group").unwrap(),
-        ScmpSyscall::from_name("futex").unwrap_or_else(|_| ScmpSyscall::from_name("futex_time64").unwrap()),
-        ScmpSyscall::from_name("clock_gettime").unwrap_or_else(|_| ScmpSyscall::from_name("clock_gettime64").unwrap()),
-        ScmpSyscall::from_name("clock_nanosleep").unwrap_or_else(|_| ScmpSyscall::from_name("clock_nanosleep_time64").unwrap()),
+        ScmpSyscall::from_name("futex")
+            .unwrap_or_else(|_| ScmpSyscall::from_name("futex_time64").unwrap()),
+        ScmpSyscall::from_name("clock_gettime")
+            .unwrap_or_else(|_| ScmpSyscall::from_name("clock_gettime64").unwrap()),
+        ScmpSyscall::from_name("clock_nanosleep")
+            .unwrap_or_else(|_| ScmpSyscall::from_name("clock_nanosleep_time64").unwrap()),
         ScmpSyscall::from_name("rt_sigaction").unwrap(),
         ScmpSyscall::from_name("rt_sigprocmask").unwrap(),
         ScmpSyscall::from_name("ppoll").unwrap_or_else(|_| ScmpSyscall::from_name("poll").unwrap()),
@@ -87,33 +92,46 @@ fn seccomp_minimal_allow() -> Result<(), String> {
         ScmpSyscall::from_name("mmap").unwrap(),
         ScmpSyscall::from_name("munmap").unwrap(),
         ScmpSyscall::from_name("brk").unwrap(),
-        ScmpSyscall::from_name("fstat").unwrap_or_else(|_| ScmpSyscall::from_name("newfstatat").unwrap()),
+        ScmpSyscall::from_name("fstat")
+            .unwrap_or_else(|_| ScmpSyscall::from_name("newfstatat").unwrap()),
         ScmpSyscall::from_name("lseek").unwrap(),
         ScmpSyscall::from_name("fcntl").unwrap(),
-        ScmpSyscall::from_name("readlinkat").unwrap_or_else(|_| ScmpSyscall::from_name("readlink").unwrap()),
+        ScmpSyscall::from_name("readlinkat")
+            .unwrap_or_else(|_| ScmpSyscall::from_name("readlink").unwrap()),
     ];
     // getrandom は緩和時に確実に許可
     let loosen = std::env::var("MAGICRUNE_SECCOMP_LOOSEN").ok().as_deref() == Some("1");
     if loosen {
-        for name in ["getrandom","prlimit64","setrlimit","clone3"].iter() {
-            if let Ok(sys) = ScmpSyscall::from_name(name) { list.push(sys); }
+        for name in ["getrandom", "prlimit64", "setrlimit", "clone3"].iter() {
+            if let Ok(sys) = ScmpSyscall::from_name(name) {
+                list.push(sys);
+            }
         }
-        eprintln!("[seccomp] INFO: loosen enabled (added: getrandom, prlimit64, setrlimit, clone3)");
+        eprintln!(
+            "[seccomp] INFO: loosen enabled (added: getrandom, prlimit64, setrlimit, clone3)"
+        );
     } else {
-        if let Ok(sys)=ScmpSyscall::from_name("getrandom") { list.push(sys); }
+        if let Ok(sys) = ScmpSyscall::from_name("getrandom") {
+            list.push(sys);
+        }
     }
-    for s in list.into_iter() { allow(&mut filter, s).map_err(|e| format!("{:?}", e))?; }
+    for s in list.into_iter() {
+        allow(&mut filter, s).map_err(|e| format!("{:?}", e))?;
+    }
     filter.load().map_err(|e| format!("{:?}", e))?;
     Ok(())
 }
 
 #[cfg(not(all(target_os = "linux", feature = "native_sandbox")))]
-fn seccomp_minimal_allow() -> Result<(), String> { Err("seccomp not supported in this build".into()) }
+#[allow(dead_code)]
+fn seccomp_minimal_allow() -> Result<(), String> {
+    Err("seccomp not supported in this build".into())
+}
 
 // OverlayFS(ro) + tmpfs:/tmp (best-effort). Returns guard on success.
 #[cfg(all(target_os = "linux", feature = "linux_native"))]
 fn try_enable_overlay_ro() -> anyhow::Result<Option<OverlayGuard>> {
-    use nix::{mount, sched::unshare, mount::MsFlags, unistd};
+    use nix::{mount, mount::MsFlags, sched::unshare, unistd};
     use std::{fs, path::PathBuf};
     if std::env::var("MAGICRUNE_OVERLAY_RO").ok().as_deref() != Some("1") {
         return Ok(None);
@@ -137,7 +155,9 @@ fn try_enable_overlay_ro() -> anyhow::Result<Option<OverlayGuard>> {
     let upper = scratch.join("upper");
     let work = scratch.join("work");
     let root = scratch.join("root");
-    fs::create_dir_all(&upper)?; fs::create_dir_all(&work)?; fs::create_dir_all(&root)?;
+    fs::create_dir_all(&upper)?;
+    fs::create_dir_all(&work)?;
+    fs::create_dir_all(&root)?;
     // 4) tmpfs for tmp under scratch
     let tmp_in_root = scratch.join("tmp");
     fs::create_dir_all(&tmp_in_root)?;
@@ -152,7 +172,9 @@ fn try_enable_overlay_ro() -> anyhow::Result<Option<OverlayGuard>> {
     // 5) overlay mount
     let opts = format!(
         "lowerdir={},upperdir={},workdir={}",
-        lower.display(), upper.display(), work.display()
+        lower.display(),
+        upper.display(),
+        work.display()
     );
     mount::mount(
         Some("overlay"),
@@ -165,7 +187,13 @@ fn try_enable_overlay_ro() -> anyhow::Result<Option<OverlayGuard>> {
     // 6) minimal fs inside root
     let proc_path = root.join("proc");
     fs::create_dir_all(&proc_path).ok();
-    let _ = mount::mount(Some("proc"), proc_path.as_path(), Some("proc"), MsFlags::empty(), Some(""));
+    let _ = mount::mount(
+        Some("proc"),
+        proc_path.as_path(),
+        Some("proc"),
+        MsFlags::empty(),
+        Some(""),
+    );
     // bind tmp into root
     let root_tmp = root.join("tmp");
     fs::create_dir_all(&root_tmp)?;
@@ -181,10 +209,15 @@ fn try_enable_overlay_ro() -> anyhow::Result<Option<OverlayGuard>> {
     let put_old = root.join(".old_root");
     std::fs::create_dir_all(&put_old).ok();
     let pivot_ok = match unistd::pivot_root(&root, &put_old) {
-        Ok(_) => { let _ = unistd::chdir("/"); true },
+        Ok(_) => {
+            let _ = unistd::chdir("/");
+            true
+        }
         Err(_e) => {
             // fallback to chroot
-            if let Err(e) = unistd::chroot(&root) { return Err(anyhow::anyhow!("chroot failed after pivot_root fail: {e}")); }
+            if let Err(e) = unistd::chroot(&root) {
+                return Err(anyhow::anyhow!("chroot failed after pivot_root fail: {e}"));
+            }
             let _ = unistd::chdir("/");
             false
         }
@@ -195,17 +228,30 @@ fn try_enable_overlay_ro() -> anyhow::Result<Option<OverlayGuard>> {
         let _ = std::fs::remove_dir("/.old_root");
     }
     // 9) remount / ro
-    let _ = mount::mount(Some("none"), "/", Option::<&str>::None, MsFlags::MS_REMOUNT | MsFlags::MS_RDONLY, Option::<&str>::None);
+    let _ = mount::mount(
+        Some("none"),
+        "/",
+        Option::<&str>::None,
+        MsFlags::MS_REMOUNT | MsFlags::MS_RDONLY,
+        Option::<&str>::None,
+    );
     Ok(Some(OverlayGuard { _scratch: scratch }))
 }
 
 #[cfg(not(all(target_os = "linux", feature = "linux_native")))]
-fn try_enable_overlay_ro() -> anyhow::Result<Option<()>> { Ok(None) }
+#[allow(dead_code)]
+fn try_enable_overlay_ro() -> anyhow::Result<Option<()>> {
+    Ok(None)
+}
 
 #[cfg(all(target_os = "linux", feature = "linux_native"))]
-struct OverlayGuard { _scratch: std::path::PathBuf }
+struct OverlayGuard {
+    _scratch: std::path::PathBuf,
+}
 #[cfg(all(target_os = "linux", feature = "linux_native"))]
-impl Drop for OverlayGuard { fn drop(&mut self) {} }
+impl Drop for OverlayGuard {
+    fn drop(&mut self) {}
+}
 
 // Optional Wasmtime wiring; compiled only when feature `wasm_exec` is enabled (CI).
 #[cfg(feature = "wasm_exec")]
@@ -213,19 +259,6 @@ pub mod wasm_impl {
     use super::{SandboxOutcome, SandboxSpec};
     use wasmtime::{Config, Engine, Linker, Module, Store};
     use wasmtime_wasi::sync::WasiCtxBuilder;
-
-    struct Limiter {
-        mem_bytes: u64,
-    }
-
-    impl wasmtime::ResourceLimiter for Limiter {
-        fn memory_growing(&mut self, _current: usize, desired: usize, _maximum: Option<usize>) -> bool {
-            (desired as u64) <= self.mem_bytes
-        }
-        fn table_growing(&mut self, _current: u32, _desired: u32, _maximum: Option<u32>) -> bool {
-            true
-        }
-    }
 
     pub fn engine() -> Engine {
         let mut cfg = Config::new();
@@ -239,8 +272,7 @@ pub mod wasm_impl {
         let mut store = Store::new(&engine, WasiCtxBuilder::new().inherit_stdio().build());
         // Apply resource limits derived from spec
         let fuel = 10_000_000u64; // coarse default fuel; could be derived from wall/cpu
-        let _ = store.add_fuel(fuel);
-        store.limiter(|_| Limiter { mem_bytes: 64 * 1024 * 1024 });
+        let _ = store.set_fuel(fuel);
         let module = match Module::from_binary(&engine, wasm_bytes) {
             Ok(m) => m,
             Err(_) => return SandboxOutcome::empty(),
@@ -294,16 +326,28 @@ async fn simple_exec_with_timeout(cmd: &str, stdin: &[u8], spec: &SandboxSpec) -
                 // CPU time limit (seconds)
                 let cpu_secs = (spec.cpu_ms / 1000) as u64;
                 if cpu_secs > 0 {
-                    let _ = setrlimit(Resource::RLIMIT_CPU, Rlim::from_raw(cpu_secs), Rlim::from_raw(cpu_secs));
+                    let _ = setrlimit(
+                        Resource::RLIMIT_CPU,
+                        Rlim::from_raw(cpu_secs),
+                        Rlim::from_raw(cpu_secs),
+                    );
                 }
                 // Address space (bytes)
                 let mem = (spec.memory_mb as u64) * 1024 * 1024;
                 if mem > 0 {
-                    let _ = setrlimit(Resource::RLIMIT_AS, Rlim::from_raw(mem), Rlim::from_raw(mem));
+                    let _ = setrlimit(
+                        Resource::RLIMIT_AS,
+                        Rlim::from_raw(mem),
+                        Rlim::from_raw(mem),
+                    );
                 }
                 // pids
                 if spec.pids > 0 {
-                    let _ = setrlimit(Resource::RLIMIT_NPROC, Rlim::from_raw(spec.pids as u64), Rlim::from_raw(spec.pids as u64));
+                    let _ = setrlimit(
+                        Resource::RLIMIT_NPROC,
+                        Rlim::from_raw(spec.pids as u64),
+                        Rlim::from_raw(spec.pids as u64),
+                    );
                 }
                 // Optional seccomp enable (best-effort) when feature/native and env toggled
                 #[cfg(all(target_os = "linux", feature = "native_sandbox"))]
@@ -320,9 +364,13 @@ async fn simple_exec_with_timeout(cmd: &str, stdin: &[u8], spec: &SandboxSpec) -
         // Best-effort cgroups v2 (opt-in)
         #[cfg(all(target_os = "linux", feature = "linux_native"))]
         if std::env::var("MAGICRUNE_CGROUPS").ok().as_deref() == Some("1") {
-            match crate::sandbox::cgroups::try_enable_cgroups(spec.cpu_ms, spec.memory_mb, spec.pids) {
+            match crate::sandbox::cgroups::try_enable_cgroups(
+                spec.cpu_ms,
+                spec.memory_mb,
+                spec.pids,
+            ) {
                 Ok(Some(path)) => eprintln!("[cgroups] enabled at {}", path),
-                Ok(None) => {},
+                Ok(None) => {}
                 Err(e) => eprintln!("[cgroups] WARN: enable failed, fallback: {}", e),
             }
         }

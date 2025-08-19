@@ -38,10 +38,10 @@ pub async fn publish_result(_subject: &str, _bytes: &[u8]) -> JsResult<()> {
 #[cfg(feature = "jet")]
 pub mod jet_impl {
     use super::compute_msg_id;
-    use async_nats::Client;
     use async_nats::header::HeaderMap;
-    use std::str::FromStr as _;
+    use async_nats::Client;
     use std::error::Error as StdError;
+    use std::str::FromStr as _;
 
     pub async fn connect(url: &str) -> Result<Client, Box<dyn StdError + Send + Sync>> {
         async_nats::connect(url)

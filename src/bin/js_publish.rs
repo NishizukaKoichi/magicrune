@@ -17,9 +17,7 @@ mod app {
         // Args: <file.json> [subject]
         let mut args = std::env::args().skip(1);
         let file = args.next().unwrap_or_else(|| "samples/ok.json".to_string());
-        let subject = args
-            .next()
-            .unwrap_or_else(|| "run.req.default".to_string());
+        let subject = args.next().unwrap_or_else(|| "run.req.default".to_string());
 
         let url = std::env::var("NATS_URL").unwrap_or_else(|_| "127.0.0.1:4222".to_string());
         let nc = jet_impl::connect(&format!("nats://{}", url))
@@ -44,7 +42,10 @@ mod app {
 
         // Publish request with Nats-Msg-Id header (ensure stream exists first)
         {
-            use async_nats::jetstream::{self, stream::{Config, RetentionPolicy, StorageType}};
+            use async_nats::jetstream::{
+                self,
+                stream::{Config, RetentionPolicy, StorageType},
+            };
             let js = jetstream::new(nc.clone());
             let name = std::env::var("NATS_STREAM").unwrap_or_else(|_| "RUN".to_string());
             let cfg = Config {
@@ -64,8 +65,12 @@ mod app {
 
             let mut headers = async_nats::header::HeaderMap::new();
             let id = compute_msg_id(&payload);
-            headers.insert("Nats-Msg-Id", async_nats::header::HeaderValue::from_str(&id)?);
-            js.publish_with_headers(subject.clone(), headers, payload.clone().into()).await?;
+            headers.insert(
+                "Nats-Msg-Id",
+                async_nats::header::HeaderValue::from_str(&id)?,
+            );
+            js.publish_with_headers(subject.clone(), headers, payload.clone().into())
+                .await?;
         }
 
         // Wait for response on run.res.<run_id>

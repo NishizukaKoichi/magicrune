@@ -12,6 +12,7 @@ use serde::{Deserialize, Serialize};
 
 // --- env helpers ------------------------------------------------------------
 #[inline]
+#[allow(dead_code)]
 fn env_u64(key: &str, default: u64) -> u64 {
     std::env::var(key)
         .ok()
@@ -303,7 +304,10 @@ fn load_limits_from_policy(path: &str) -> PolicyLimits {
 
 // Minimal YAML walker to extract capabilities.net.allow host[:port] entries
 fn load_net_allow_from_policy(path: &str) -> Vec<String> {
-    let text = match std::fs::read_to_string(path) { Ok(s) => s, Err(_) => return vec![] };
+    let text = match std::fs::read_to_string(path) {
+        Ok(s) => s,
+        Err(_) => return vec![],
+    };
     let mut out = Vec::new();
     let mut in_caps = false;
     let mut in_net = false;
@@ -314,27 +318,54 @@ fn load_net_allow_from_policy(path: &str) -> Vec<String> {
     for raw in text.lines() {
         let indent = raw.chars().take_while(|c| c.is_whitespace()).count();
         let line = raw.trim();
-        if line.starts_with('#') || line.is_empty() { continue; }
-        if !in_caps && line == "capabilities:" { in_caps = true; caps_indent = indent; continue; }
+        if line.starts_with('#') || line.is_empty() {
+            continue;
+        }
+        if !in_caps && line == "capabilities:" {
+            in_caps = true;
+            caps_indent = indent;
+            continue;
+        }
         if in_caps {
-            if indent <= caps_indent { in_caps = false; in_net = false; in_allow = false; }
-            if !in_net && line == "net:" { in_net = true; net_indent = indent; continue; }
+            if indent <= caps_indent {
+                in_caps = false;
+                in_net = false;
+                in_allow = false;
+            }
+            if !in_net && line == "net:" {
+                in_net = true;
+                net_indent = indent;
+                continue;
+            }
             if in_net {
-                if indent <= net_indent { in_net = false; in_allow = false; }
-                if !in_allow && line == "allow:" { in_allow = true; allow_indent = indent; continue; }
+                if indent <= net_indent {
+                    in_net = false;
+                    in_allow = false;
+                }
+                if !in_allow && line == "allow:" {
+                    in_allow = true;
+                    allow_indent = indent;
+                    continue;
+                }
                 if in_allow {
-                    if indent <= allow_indent { in_allow = false; }
+                    if indent <= allow_indent {
+                        in_allow = false;
+                    }
                     if line.starts_with("- ") {
                         let item = line.trim_start_matches("- ").trim();
                         // Support both:
                         // - host: "example.com:443" (keyed form)
                         // - "example.com:443" (simple string form)
-                        if let Some((key, val)) = item.split_once(": ") {
+                        if let Some((_, val)) = item.split_once(": ") {
                             let v = val.trim().trim_matches('"');
-                            if !v.is_empty() { out.push(v.to_string()); }
+                            if !v.is_empty() {
+                                out.push(v.to_string());
+                            }
                         } else {
                             let v = item.trim().trim_matches('"');
-                            if !v.is_empty() { out.push(v.to_string()); }
+                            if !v.is_empty() {
+                                out.push(v.to_string());
+                            }
                         }
                     }
                 }
@@ -353,7 +384,9 @@ fn extract_http_hosts(cmd: &str) -> Vec<String> {
             let start = i + pos + scheme.len();
             let rest = &cmd[start..];
             // host[:port] until first '/' or space
-            let end = rest.find(|c: char| c == '/' || c.is_whitespace()).unwrap_or(rest.len());
+            let end = rest
+                .find(|c: char| c == '/' || c.is_whitespace())
+                .unwrap_or(rest.len());
             let hostport = &rest[..end];
             if !hostport.is_empty() {
                 let default_port = if *scheme == "https://" { "443" } else { "80" };
@@ -376,29 +409,43 @@ fn hostport_parts(s: &str) -> (std::borrow::Cow<str>, Option<&str>) {
     if let Some(rest) = st.strip_prefix('[') {
         if let Some(pos) = rest.find(']') {
             let host = &rest[..pos];
-            let after = &rest[pos+1..];
-            if let Some(p) = after.strip_prefix(':') { return (std::borrow::Cow::Owned(host.to_string()), Some(p)); }
+            let after = &rest[pos + 1..];
+            if let Some(p) = after.strip_prefix(':') {
+                return (std::borrow::Cow::Owned(host.to_string()), Some(p));
+            }
             return (std::borrow::Cow::Owned(host.to_string()), None);
         }
     }
-    if let Some((h,p)) = st.rsplit_once(':') {
-        if !p.is_empty() && p.chars().all(|c| c.is_ascii_digit()) { return (std::borrow::Cow::Owned(h.to_string()), Some(p)); }
+    if let Some((h, p)) = st.rsplit_once(':') {
+        if !p.is_empty() && p.chars().all(|c| c.is_ascii_digit()) {
+            return (std::borrow::Cow::Owned(h.to_string()), Some(p));
+        }
     }
     (std::borrow::Cow::Borrowed(st), None)
 }
 
-fn parse_port_spec(p: Option<&str>) -> (bool, Option<(u16,u16)>) {
+fn parse_port_spec(p: Option<&str>) -> (bool, Option<(u16, u16)>) {
     if let Some(ps) = p {
-        if ps == "*" { return (true, None); }
-        if let Some((a,b)) = ps.split_once('-') { if let (Ok(x),Ok(y))=(a.parse(),b.parse()) { return (false, Some((x,y))); } }
-        if let Ok(x) = ps.parse::<u16>() { return (false, Some((x,x))); }
+        if ps == "*" {
+            return (true, None);
+        }
+        if let Some((a, b)) = ps.split_once('-') {
+            if let (Ok(x), Ok(y)) = (a.parse(), b.parse()) {
+                return (false, Some((x, y)));
+            }
+        }
+        if let Ok(x) = ps.parse::<u16>() {
+            return (false, Some((x, x)));
+        }
     }
     (false, None)
 }
 
 fn parse_cidr(host: &str) -> Option<(std::net::IpAddr, u8)> {
     if let Some((ip, pre)) = host.split_once('/') {
-        if let (Ok(addr), Ok(p)) = (ip.parse::<std::net::IpAddr>(), pre.parse::<u8>()) { return Some((addr, p)); }
+        if let (Ok(addr), Ok(p)) = (ip.parse::<std::net::IpAddr>(), pre.parse::<u8>()) {
+            return Some((addr, p));
+        }
     }
     None
 }
@@ -406,15 +453,31 @@ fn parse_cidr(host: &str) -> Option<(std::net::IpAddr, u8)> {
 fn ip_in_cidr(ip: std::net::IpAddr, cidr: (std::net::IpAddr, u8)) -> bool {
     match (ip, cidr.0) {
         (std::net::IpAddr::V4(a), std::net::IpAddr::V4(n)) => {
-            let a = u32::from(a); let n = u32::from(n);
-            let p = cidr.1; if p==0 { return true; }
-            let mask = if p==32 { u32::MAX } else { (!0u32) << (32 - p as u32) };
+            let a = u32::from(a);
+            let n = u32::from(n);
+            let p = cidr.1;
+            if p == 0 {
+                return true;
+            }
+            let mask = if p == 32 {
+                u32::MAX
+            } else {
+                (!0u32) << (32 - p as u32)
+            };
             (a & mask) == (n & mask)
         }
         (std::net::IpAddr::V6(a), std::net::IpAddr::V6(n)) => {
-            let a = u128::from(a); let n = u128::from(n);
-            let p = cidr.1; if p==0 { return true; }
-            let mask: u128 = if p==128 { u128::MAX } else { (!0u128) << (128 - p as u32) };
+            let a = u128::from(a);
+            let n = u128::from(n);
+            let p = cidr.1;
+            if p == 0 {
+                return true;
+            }
+            let mask: u128 = if p == 128 {
+                u128::MAX
+            } else {
+                (!0u128) << (128 - p as u32)
+            };
             (a & mask) == (n & mask)
         }
         _ => false,
@@ -425,7 +488,9 @@ fn allowed_match(host: &str, port: Option<&str>, allow: &str) -> bool {
     // CIDR
     if let Some((net, pre)) = parse_cidr(allow) {
         if let Ok(ip) = host.parse::<std::net::IpAddr>() {
-            if ip_in_cidr(ip, (net, pre)) { return true; }
+            if ip_in_cidr(ip, (net, pre)) {
+                return true;
+            }
         }
         return false;
     }
@@ -435,27 +500,40 @@ fn allowed_match(host: &str, port: Option<&str>, allow: &str) -> bool {
     let a_host = a_host_port.as_ref();
     if let Some(suf) = a_host.strip_prefix("*.") {
         if host.ends_with(suf) {
-            if any_port { return true; }
-            if let (Some((lo,hi)), Some(p)) = (range, port.and_then(|x| x.parse::<u16>().ok())) { return p>=lo && p<=hi; }
+            if any_port {
+                return true;
+            }
+            if let (Some((lo, hi)), Some(p)) = (range, port.and_then(|x| x.parse::<u16>().ok())) {
+                return p >= lo && p <= hi;
+            }
             return range.is_none();
         }
     }
     if a_host == host {
-        if any_port { return true; }
-        if let (Some((lo,hi)), Some(p)) = (range, port.and_then(|x| x.parse::<u16>().ok())) { return p>=lo && p<=hi; }
+        if any_port {
+            return true;
+        }
+        if let (Some((lo, hi)), Some(p)) = (range, port.and_then(|x| x.parse::<u16>().ok())) {
+            return p >= lo && p <= hi;
+        }
         return range.is_none();
     }
     // IPv6 literal allow entry without brackets
     if a_host.starts_with('[') && a_host.ends_with(']') {
-        let inner = &a_host[1..a_host.len()-1];
-        if inner == host { return true; }
+        let inner = &a_host[1..a_host.len() - 1];
+        if inner == host {
+            return true;
+        }
     }
     false
 }
 
 // Very small YAML walker to extract capabilities.fs.allow path entries
 fn load_fs_allow_from_policy(path: &str) -> Vec<String> {
-    let text = match std::fs::read_to_string(path) { Ok(s) => s, Err(_) => return vec![] };
+    let text = match std::fs::read_to_string(path) {
+        Ok(s) => s,
+        Err(_) => return vec![],
+    };
     let mut out = Vec::new();
     let mut in_caps = false;
     let mut in_fs = false;
@@ -466,21 +544,46 @@ fn load_fs_allow_from_policy(path: &str) -> Vec<String> {
     for raw in text.lines() {
         let indent = raw.chars().take_while(|c| c.is_whitespace()).count();
         let line = raw.trim();
-        if line.starts_with('#') || line.is_empty() { continue; }
-        if !in_caps && line == "capabilities:" { in_caps = true; caps_indent = indent; continue; }
+        if line.starts_with('#') || line.is_empty() {
+            continue;
+        }
+        if !in_caps && line == "capabilities:" {
+            in_caps = true;
+            caps_indent = indent;
+            continue;
+        }
         if in_caps {
-            if indent <= caps_indent { in_caps = false; in_fs = false; in_allow = false; }
-            if !in_fs && line == "fs:" { in_fs = true; fs_indent = indent; continue; }
+            if indent <= caps_indent {
+                in_caps = false;
+                in_fs = false;
+                in_allow = false;
+            }
+            if !in_fs && line == "fs:" {
+                in_fs = true;
+                fs_indent = indent;
+                continue;
+            }
             if in_fs {
-                if indent <= fs_indent { in_fs = false; in_allow = false; }
-                if !in_allow && line == "allow:" { in_allow = true; allow_indent = indent; continue; }
+                if indent <= fs_indent {
+                    in_fs = false;
+                    in_allow = false;
+                }
+                if !in_allow && line == "allow:" {
+                    in_allow = true;
+                    allow_indent = indent;
+                    continue;
+                }
                 if in_allow {
-                    if indent <= allow_indent { in_allow = false; }
+                    if indent <= allow_indent {
+                        in_allow = false;
+                    }
                     if line.starts_with("- ") {
                         // expect '- path: "..."'
                         if let Some(rest) = line.trim_start_matches("- ").strip_prefix("path:") {
                             let v = rest.trim().trim_start_matches(':').trim().trim_matches('"');
-                            if !v.is_empty() { out.push(v.to_string()); }
+                            if !v.is_empty() {
+                                out.push(v.to_string());
+                            }
                         }
                     }
                 }
@@ -542,12 +645,16 @@ fn main() {
                 .iter()
                 .position(|a| a == "--url")
                 .and_then(|i| args.get(i + 1).cloned())
-                .unwrap_or_else(|| env::var("NATS_URL").unwrap_or_else(|_| "127.0.0.1:4222".to_string()));
+                .unwrap_or_else(|| {
+                    env::var("NATS_URL").unwrap_or_else(|_| "127.0.0.1:4222".to_string())
+                });
             let subject = args
                 .iter()
                 .position(|a| a == "--subject")
                 .and_then(|i| args.get(i + 1).cloned())
-                .unwrap_or_else(|| env::var("NATS_REQ_SUBJ").unwrap_or_else(|_| "run.req.default".to_string()));
+                .unwrap_or_else(|| {
+                    env::var("NATS_REQ_SUBJ").unwrap_or_else(|_| "run.req.default".to_string())
+                });
             if let Err(e) = consume_entry(&url, &subject) {
                 eprintln!("consume error: {}", e);
                 std::process::exit(4);
@@ -650,20 +757,18 @@ fn main() {
         // JSON Schema validation against schemas/spell_request.schema.json
         let schema_path = Path::new("schemas/spell_request.schema.json");
         if schema_path.exists() {
-            match std::fs::read_to_string(schema_path) {
-                Ok(schema_txt) => {
-                    let schema_json: serde_json::Value = serde_json::from_str(&schema_txt).unwrap_or(serde_json::json!({}));
-                    if let Ok(compiled) = jsonschema::JSONSchema::options().compile(&schema_json) {
-                        let result = compiled.validate(&req_val);
-                        if let Err(errors) = result {
-                            for err in errors {
-                                eprintln!("schema: {}", err);
-                            }
-                            std::process::exit(1);
+            if let Ok(schema_txt) = std::fs::read_to_string(schema_path) {
+                let schema_json: serde_json::Value =
+                    serde_json::from_str(&schema_txt).unwrap_or(serde_json::json!({}));
+                if let Ok(compiled) = jsonschema::JSONSchema::options().compile(&schema_json) {
+                    let result = compiled.validate(&req_val);
+                    if let Err(errors) = result {
+                        for err in errors {
+                            eprintln!("schema: {}", err);
                         }
+                        std::process::exit(1);
                     }
                 }
-                Err(_) => {}
             }
         }
         // Manual structural validation aligned with schemas (no external crates)
@@ -778,13 +883,25 @@ fn main() {
         .or_else(|| std::env::var("MAGICRUNE_POLICY").ok())
         .unwrap_or_else(|| "policies/default.policy.yml".to_string());
     let limits = load_limits_from_policy(&policy_path);
-    eprintln!("policy: using {} (wall_sec={}, cpu_ms={}, memory_mb={})", 
-        &policy_path, limits.wall_sec, limits.cpu_ms, limits.memory_mb);
+    eprintln!(
+        "policy: using {} (wall_sec={}, cpu_ms={}, memory_mb={})",
+        &policy_path, limits.wall_sec, limits.cpu_ms, limits.memory_mb
+    );
     // Enforce env allow/deny
     let (env_allow, env_deny) = load_env_policy_from_policy(&policy_path);
-    for (k, _v) in &req.env { if env_deny.iter().any(|p| pat_matches(k, p)) { eprintln!("policy: env deny {}", k); std::process::exit(3); } }
+    for (k, _v) in &req.env {
+        if env_deny.iter().any(|p| pat_matches(k, p)) {
+            eprintln!("policy: env deny {}", k);
+            std::process::exit(3);
+        }
+    }
     if !env_allow.is_empty() {
-        for (k, _v) in &req.env { if !env_allow.iter().any(|p| pat_matches(k, p)) { eprintln!("policy: env not allowed {}", k); std::process::exit(3); } }
+        for (k, _v) in &req.env {
+            if !env_allow.iter().any(|p| pat_matches(k, p)) {
+                eprintln!("policy: env not allowed {}", k);
+                std::process::exit(3);
+            }
+        }
     }
     // Enforce NET allowlist: union of request.allow_net and policy capabilities.net.allow
     if net_intent {
@@ -812,7 +929,8 @@ fn main() {
         std::process::exit(3);
     }
 
-    if net_intent && req.allow_net.is_empty() && load_net_allow_from_policy(&policy_path).is_empty() {
+    if net_intent && req.allow_net.is_empty() && load_net_allow_from_policy(&policy_path).is_empty()
+    {
         risk_score += 40;
     }
     if cmd_l.contains("ssh ") {
@@ -842,13 +960,24 @@ fn main() {
                 eprintln!("schema: file.path must be absolute and must not contain '..'");
                 std::process::exit(1);
             }
-            for ro in &fs_readonly { if pat_matches(&f.path, ro) { eprintln!("policy: write to readonly {}", f.path); std::process::exit(20); } }
+            for ro in &fs_readonly {
+                if pat_matches(&f.path, ro) {
+                    eprintln!("policy: write to readonly {}", f.path);
+                    std::process::exit(20);
+                }
+            }
             let allowed_tmp = p.starts_with("/tmp/");
             let mut allowed = allowed_tmp; // default allow only /tmp/**
-            // Also allow paths granted by policy capabilities.fs.allow
+                                           // Also allow paths granted by policy capabilities.fs.allow
             for pat in &policy_fs_allow {
-                if pat == "/tmp/**" && allowed_tmp { allowed = true; break; }
-                if pat == &f.path { allowed = true; break; }
+                if pat == "/tmp/**" && allowed_tmp {
+                    allowed = true;
+                    break;
+                }
+                if pat == &f.path {
+                    allowed = true;
+                    break;
+                }
             }
             if !allowed {
                 eprintln!("policy: write denied for {}", f.path);
@@ -957,7 +1086,9 @@ fn main() {
                         let out_val: serde_json::Value = serde_json::from_str(&out_json).unwrap();
                         let validation = compiled.validate(&out_val);
                         if let Err(errors) = validation {
-                            for err in errors { eprintln!("output schema: {}", err); }
+                            for err in errors {
+                                eprintln!("output schema: {}", err);
+                            }
                             std::process::exit(2);
                         }
                     }
@@ -1045,9 +1176,23 @@ fn consume_entry(url: &str, subject: &str) -> anyhow::Result<()> {
         let nc = bootstrapped::jet::jet_impl::connect(&format!("nats://{}", url))
             .await
             .map_err(|e| anyhow::anyhow!(e.to_string()))?;
-        fn env_u64(key: &str, default: u64) -> u64 { std::env::var(key).ok().and_then(|s| s.parse::<u64>().ok()).unwrap_or(default) }
-        fn env_i64(key: &str, default: i64) -> i64 { std::env::var(key).ok().and_then(|s| s.parse::<i64>().ok()).unwrap_or(default) }
-        use async_nats::jetstream::{self, stream::{Config, RetentionPolicy, StorageType}};
+        fn env_u64(key: &str, default: u64) -> u64 {
+            std::env::var(key)
+                .ok()
+                .and_then(|s| s.parse::<u64>().ok())
+                .unwrap_or(default)
+        }
+        #[allow(dead_code)]
+        fn env_i64(key: &str, default: i64) -> i64 {
+            std::env::var(key)
+                .ok()
+                .and_then(|s| s.parse::<i64>().ok())
+                .unwrap_or(default)
+        }
+        use async_nats::jetstream::{
+            self,
+            stream::{Config, RetentionPolicy, StorageType},
+        };
         let js = jetstream::new(nc.clone());
         // Ensure JetStream stream exists for dedupe window
         {
@@ -1070,9 +1215,16 @@ fn consume_entry(url: &str, subject: &str) -> anyhow::Result<()> {
 
             // Ensure a durable consumer exists
             use async_nats::jetstream::consumer::{self, pull};
-            let durable = std::env::var("NATS_DURABLE").unwrap_or_else(|_| "RUN_WORKER".to_string());
-            let max_ack_pending = std::env::var("NATS_MAX_ACK_PENDING").ok().and_then(|s| s.parse::<i64>().ok()).unwrap_or(2048);
-            let ack_wait_sec = std::env::var("NATS_ACK_WAIT_SEC").ok().and_then(|s| s.parse::<u64>().ok()).unwrap_or(30);
+            let durable =
+                std::env::var("NATS_DURABLE").unwrap_or_else(|_| "RUN_WORKER".to_string());
+            let max_ack_pending = std::env::var("NATS_MAX_ACK_PENDING")
+                .ok()
+                .and_then(|s| s.parse::<i64>().ok())
+                .unwrap_or(2048);
+            let ack_wait_sec = std::env::var("NATS_ACK_WAIT_SEC")
+                .ok()
+                .and_then(|s| s.parse::<u64>().ok())
+                .unwrap_or(30);
             let c_cfg = pull::Config {
                 durable_name: Some(durable.clone()),
                 ack_policy: consumer::AckPolicy::Explicit,
@@ -1085,157 +1237,356 @@ fn consume_entry(url: &str, subject: &str) -> anyhow::Result<()> {
                     let _ = stream.create_consumer(c_cfg.clone()).await;
                 }
                 // Optional: override max_deliver via env by creating a generic consumer config
-                if let Ok(max_deliver) = std::env::var("NATS_CONSUMER_MAX_DELIVER").ok().and_then(|s| s.parse::<i64>().ok()) {
-                    let base = async_nats::jetstream::consumer::Config { durable_name: Some(durable.clone()), max_deliver, ..Default::default() };
+                if let Some(max_deliver) = std::env::var("NATS_CONSUMER_MAX_DELIVER")
+                    .ok()
+                    .and_then(|s| s.parse::<i64>().ok())
+                {
+                    let base = async_nats::jetstream::consumer::Config {
+                        durable_name: Some(durable.clone()),
+                        max_deliver,
+                        ..Default::default()
+                    };
                     let _ = stream.create_consumer(base).await;
                 }
                 // Switch to JetStream pull consumption
-                let consumer = stream.get_consumer::<pull::Config>(&durable).await.map_err(|e| anyhow::anyhow!(e.to_string()))?;
-                let mut messages = consumer.messages().await.map_err(|e| anyhow::anyhow!(e.to_string()))?;
+                let consumer = stream
+                    .get_consumer::<pull::Config>(&durable)
+                    .await
+                    .map_err(|e| anyhow::anyhow!(e.to_string()))?;
+                let mut messages = consumer
+                    .messages()
+                    .await
+                    .map_err(|e| anyhow::anyhow!(e.to_string()))?;
 
                 // Dedupe caches and simple metrics
                 let mut seen: HashSet<String> = HashSet::new();
                 let mut order: VecDeque<String> = VecDeque::new();
-                let dedupe_max = std::env::var("MAGICRUNE_DEDUPE_MAX").ok().and_then(|s| s.parse::<usize>().ok()).unwrap_or(1024);
+                let dedupe_max = std::env::var("MAGICRUNE_DEDUPE_MAX")
+                    .ok()
+                    .and_then(|s| s.parse::<usize>().ok())
+                    .unwrap_or(1024);
                 let metrics_every = env_u64("MAGICRUNE_METRICS_EVERY", 100);
                 let mut count_total: u64 = 0;
                 let mut count_dupe: u64 = 0;
                 let mut count_red: u64 = 0;
                 let metrics_text = std::env::var("MAGICRUNE_METRICS_TEXTFILE").ok();
-                fn write_text_metrics(path:&str,total:u64,dupe:u64,red:u64,prefix:&str){
-                    use std::io::Write; let tmp=format!("{}.tmp",path);
-                    if let Ok(mut f)=std::fs::File::create(&tmp){
-                        let _=writeln!(f,"# magicrune metrics");
-                        let _=writeln!(f,"{}_processed_total {}",prefix,total);
-                        let _=writeln!(f,"{}_dupe_total {}",prefix,dupe);
-                        let _=writeln!(f,"{}_red_total {}",prefix,red);
+                fn write_text_metrics(path: &str, total: u64, dupe: u64, red: u64, prefix: &str) {
+                    use std::io::Write;
+                    let tmp = format!("{}.tmp", path);
+                    if let Ok(mut f) = std::fs::File::create(&tmp) {
+                        let _ = writeln!(f, "# magicrune metrics");
+                        let _ = writeln!(f, "{}_processed_total {}", prefix, total);
+                        let _ = writeln!(f, "{}_dupe_total {}", prefix, dupe);
+                        let _ = writeln!(f, "{}_red_total {}", prefix, red);
                     }
-                    let _=std::fs::rename(tmp,path);
+                    let _ = std::fs::rename(tmp, path);
                 }
                 // Jitter helpers (e.g., "200..=800")
-                fn parse_jitter(spec: &str) -> Option<(u64,u64)> {
+                fn parse_jitter(spec: &str) -> Option<(u64, u64)> {
                     let s = spec.trim();
-                    if let Some((a,b)) = s.split_once("..=") {
-                        if let (Ok(lo), Ok(hi)) = (a.trim().parse::<u64>(), b.trim().parse::<u64>()) {
-                            if lo <= hi { return Some((lo,hi)); }
+                    if let Some((a, b)) = s.split_once("..=") {
+                        if let (Ok(lo), Ok(hi)) = (a.trim().parse::<u64>(), b.trim().parse::<u64>())
+                        {
+                            if lo <= hi {
+                                return Some((lo, hi));
+                            }
                         }
-                    } else if let Some((a,b)) = s.split_once("..") {
-                        if let (Ok(lo), Ok(hi)) = (a.trim().parse::<u64>(), b.trim().parse::<u64>()) {
-                            if lo <= hi { return Some((lo,hi)); }
+                    } else if let Some((a, b)) = s.split_once("..") {
+                        if let (Ok(lo), Ok(hi)) = (a.trim().parse::<u64>(), b.trim().parse::<u64>())
+                        {
+                            if lo <= hi {
+                                return Some((lo, hi));
+                            }
                         }
                     }
                     None
                 }
-                fn jitter_ms(r: Option<(u64,u64)>) -> u64 {
-                    if let Some((lo,hi)) = r {
+                fn jitter_ms(r: Option<(u64, u64)>) -> u64 {
+                    if let Some((lo, hi)) = r {
                         let now = std::time::SystemTime::now()
                             .duration_since(std::time::UNIX_EPOCH)
                             .unwrap_or_default()
                             .as_nanos();
-                        let mut x = (now as u64).wrapping_mul(6364136223846793005).wrapping_add(1);
-                        x ^= x >> 33; x = x.wrapping_mul(0xff51afd7ed558ccd); x ^= x >> 33;
+                        let mut x = (now as u64)
+                            .wrapping_mul(6364136223846793005)
+                            .wrapping_add(1);
+                        x ^= x >> 33;
+                        x = x.wrapping_mul(0xff51afd7ed558ccd);
+                        x ^= x >> 33;
                         let span = hi - lo + 1;
                         return lo + (x % span);
                     }
                     0
                 }
-                let jitter = std::env::var("MAGICRUNE_TEST_DELAY_MS_JITTER").ok().and_then(|s| parse_jitter(&s));
-                let skip_ack_once = std::env::var("MAGICRUNE_TEST_SKIP_ACK_ONCE").ok().as_deref() == Some("1");
-                let mut skipped_once: std::collections::HashSet<String> = std::collections::HashSet::new();
+                let jitter = std::env::var("MAGICRUNE_TEST_DELAY_MS_JITTER")
+                    .ok()
+                    .and_then(|s| parse_jitter(&s));
+                let skip_ack_once = std::env::var("MAGICRUNE_TEST_SKIP_ACK_ONCE")
+                    .ok()
+                    .as_deref()
+                    == Some("1");
+                let mut skipped_once: std::collections::HashSet<String> =
+                    std::collections::HashSet::new();
                 let metrics_file = std::env::var("MAGICRUNE_METRICS_FILE").ok();
 
                 let delay_ms = env_u64("MAGICRUNE_TEST_DELAY_MS", 0);
                 while let Some(Ok(msg)) = messages.next().await {
                     count_total += 1;
-                    let id = msg.headers.as_ref().and_then(|h| h.get("Nats-Msg-Id")).map(|v| v.to_string()).unwrap_or_else(|| bootstrapped::jet::compute_msg_id(msg.payload.as_ref()));
-                    if seen.contains(&id) { count_dupe += 1; let _ = msg.ack().await; continue; }
-                    if seen.insert(id.clone()) { order.push_back(id); if order.len() > dedupe_max { if let Some(old)=order.pop_front(){ seen.remove(&old);} } }
+                    let id = msg
+                        .headers
+                        .as_ref()
+                        .and_then(|h| h.get("Nats-Msg-Id"))
+                        .map(|v| v.to_string())
+                        .unwrap_or_else(|| bootstrapped::jet::compute_msg_id(msg.payload.as_ref()));
+                    if seen.contains(&id) {
+                        count_dupe += 1;
+                        let _ = msg.ack().await;
+                        continue;
+                    }
+                    if seen.insert(id.clone()) {
+                        order.push_back(id);
+                        if order.len() > dedupe_max {
+                            if let Some(old) = order.pop_front() {
+                                seen.remove(&old);
+                            }
+                        }
+                    }
 
                     let payload = msg.payload.to_vec();
-                    let req_val: serde_json::Value = match serde_json::from_slice(&payload) { Ok(v) => v, Err(_) => { let _=msg.ack().await; continue; } };
+                    let req_val: serde_json::Value = match serde_json::from_slice(&payload) {
+                        Ok(v) => v,
+                        Err(_) => {
+                            let _ = msg.ack().await;
+                            continue;
+                        }
+                    };
                     let mut seed_le = 0u64.to_le_bytes().to_vec();
-                    if let Some(s) = req_val.get("seed").and_then(|x| x.as_u64()) { seed_le = s.to_le_bytes().to_vec(); }
-                    let mut all = payload.clone(); all.extend_from_slice(&seed_le);
+                    if let Some(s) = req_val.get("seed").and_then(|x| x.as_u64()) {
+                        seed_le = s.to_le_bytes().to_vec();
+                    }
+                    let mut all = payload.clone();
+                    all.extend_from_slice(&seed_le);
                     let run_id = format!("r_{}", sha256_hex(&all));
 
-                    let req: SpellRequest = match serde_json::from_slice(&payload) { Ok(r) => r, Err(_) => { let _=msg.ack().await; continue; } };
+                    let req: SpellRequest = match serde_json::from_slice(&payload) {
+                        Ok(r) => r,
+                        Err(_) => {
+                            let _ = msg.ack().await;
+                            continue;
+                        }
+                    };
 
                     // Minimal grading and policy
                     let cmd_l = req.cmd.to_lowercase();
                     let mut risk_score: u32 = 0;
-                    let net_intent = cmd_l.contains("curl ") || cmd_l.contains("wget ") || cmd_l.contains("http://") || cmd_l.contains("https://");
-                    let policy_path = std::env::var("MAGICRUNE_POLICY").unwrap_or_else(|_| "policies/default.policy.yml".to_string());
+                    let net_intent = cmd_l.contains("curl ")
+                        || cmd_l.contains("wget ")
+                        || cmd_l.contains("http://")
+                        || cmd_l.contains("https://");
+                    let policy_path = std::env::var("MAGICRUNE_POLICY")
+                        .unwrap_or_else(|_| "policies/default.policy.yml".to_string());
                     let limits = load_limits_from_policy(&policy_path);
                     if net_intent && req.allow_net.is_empty() {
-                        let res = SpellResult { run_id: run_id.clone(), verdict: "red".into(), risk_score: 80, exit_code: 20, duration_ms: 0, stdout_trunc: false, sbom_attestation: None };
+                        let res = SpellResult {
+                            run_id: run_id.clone(),
+                            verdict: "red".into(),
+                            risk_score: 80,
+                            exit_code: 20,
+                            duration_ms: 0,
+                            stdout_trunc: false,
+                            sbom_attestation: None,
+                        };
                         let subj = format!("run.res.{}", run_id);
-                    let total_delay = delay_ms + jitter_ms(jitter);
-                    if total_delay > 0 { tokio::time::sleep(std::time::Duration::from_millis(total_delay)).await; }
-                    let _ = js.publish(subj, serde_json::to_vec(&res)?.into()).await;
+                        let total_delay = delay_ms + jitter_ms(jitter);
+                        if total_delay > 0 {
+                            tokio::time::sleep(std::time::Duration::from_millis(total_delay)).await;
+                        }
+                        let _ = js.publish(subj, serde_json::to_vec(&res)?.into()).await;
                         count_red += 1;
-                        if !(skip_ack_once && skipped_once.insert(run_id.clone())) { let _ = msg.ack().await; }
-                    if let Some(path) = &metrics_file { let _ = std::fs::write(path, format!("{{\"total\":{},\"dupe\":{},\"red\":{}}}", count_total, count_dupe, count_red)); }
-                    if let Some(p) = &metrics_text { write_text_metrics(p, count_total, count_dupe, count_red, "magicrune"); }
-                    continue;
-                }
-                    if cmd_l.contains("ssh ") { risk_score += 30; }
+                        if !(skip_ack_once && skipped_once.insert(run_id.clone())) {
+                            let _ = msg.ack().await;
+                        }
+                        if let Some(path) = &metrics_file {
+                            let _ = std::fs::write(
+                                path,
+                                format!(
+                                    "{{\"total\":{},\"dupe\":{},\"red\":{}}}",
+                                    count_total, count_dupe, count_red
+                                ),
+                            );
+                        }
+                        if let Some(p) = &metrics_text {
+                            write_text_metrics(p, count_total, count_dupe, count_red, "magicrune");
+                        }
+                        continue;
+                    }
+                    if cmd_l.contains("ssh ") {
+                        risk_score += 30;
+                    }
 
                     // Files
                     let mut fs_violation = false;
                     for f in &req.files {
                         let p = std::path::Path::new(&f.path);
-                        if !p.is_absolute() || f.path.contains("..") { fs_violation = true; break; }
+                        if !p.is_absolute() || f.path.contains("..") {
+                            fs_violation = true;
+                            break;
+                        }
                         let allowed_tmp = p.starts_with("/tmp/");
                         let mut allowed = allowed_tmp;
-                        if !req.allow_fs.is_empty() { for pat in &req.allow_fs { if pat=="/tmp/**" && allowed_tmp { allowed = true; break; } if pat==&f.path { allowed = true; break; } } }
-                        if !allowed { fs_violation = true; break; }
-                        if let Some(dir) = p.parent() { let _ = std::fs::create_dir_all(dir); }
-                        if !f.content_b64.is_empty() { if let Ok(bytes) = base64::engine::general_purpose::STANDARD.decode(&f.content_b64) { let _ = std::fs::write(p, &bytes); } } else { let _ = std::fs::write(p, []); }
+                        if !req.allow_fs.is_empty() {
+                            for pat in &req.allow_fs {
+                                if pat == "/tmp/**" && allowed_tmp {
+                                    allowed = true;
+                                    break;
+                                }
+                                if pat == &f.path {
+                                    allowed = true;
+                                    break;
+                                }
+                            }
+                        }
+                        if !allowed {
+                            fs_violation = true;
+                            break;
+                        }
+                        if let Some(dir) = p.parent() {
+                            let _ = std::fs::create_dir_all(dir);
+                        }
+                        if !f.content_b64.is_empty() {
+                            if let Ok(bytes) =
+                                base64::engine::general_purpose::STANDARD.decode(&f.content_b64)
+                            {
+                                let _ = std::fs::write(p, &bytes);
+                            }
+                        } else {
+                            let _ = std::fs::write(p, []);
+                        }
                     }
                     if fs_violation {
-                        let res = SpellResult { run_id: run_id.clone(), verdict: "red".into(), risk_score: risk_score.max(80), exit_code: 20, duration_ms: 0, stdout_trunc: false, sbom_attestation: None };
+                        let res = SpellResult {
+                            run_id: run_id.clone(),
+                            verdict: "red".into(),
+                            risk_score: risk_score.max(80),
+                            exit_code: 20,
+                            duration_ms: 0,
+                            stdout_trunc: false,
+                            sbom_attestation: None,
+                        };
                         let subj = format!("run.res.{}", run_id);
                         let total_delay = delay_ms + jitter_ms(jitter);
-                        if total_delay > 0 { tokio::time::sleep(std::time::Duration::from_millis(total_delay)).await; }
+                        if total_delay > 0 {
+                            tokio::time::sleep(std::time::Duration::from_millis(total_delay)).await;
+                        }
                         let _ = js.publish(subj, serde_json::to_vec(&res)?.into()).await;
                         count_red += 1;
-                        if !(skip_ack_once && skipped_once.insert(run_id.clone())) { let _ = msg.ack().await; }
-                    if let Some(path) = &metrics_file { let _ = std::fs::write(path, format!("{{\"total\":{},\"dupe\":{},\"red\":{}}}", count_total, count_dupe, count_red)); }
-                    if let Some(p) = &metrics_text { write_text_metrics(p, count_total, count_dupe, count_red, "magicrune"); }
-                    continue;
-                }
+                        if !(skip_ack_once && skipped_once.insert(run_id.clone())) {
+                            let _ = msg.ack().await;
+                        }
+                        if let Some(path) = &metrics_file {
+                            let _ = std::fs::write(
+                                path,
+                                format!(
+                                    "{{\"total\":{},\"dupe\":{},\"red\":{}}}",
+                                    count_total, count_dupe, count_red
+                                ),
+                            );
+                        }
+                        if let Some(p) = &metrics_text {
+                            write_text_metrics(p, count_total, count_dupe, count_red, "magicrune");
+                        }
+                        continue;
+                    }
 
                     // Execute with wall timeout
-                    let mut exit_code = 0i32; let mut duration_ms: u64 = 0;
-                    if std::env::var("MAGICRUNE_DRY_RUN").ok().as_deref() != Some("1") && !req.cmd.trim().is_empty() {
+                    let mut exit_code = 0i32;
+                    let mut duration_ms: u64 = 0;
+                    if std::env::var("MAGICRUNE_DRY_RUN").ok().as_deref() != Some("1")
+                        && !req.cmd.trim().is_empty()
+                    {
                         let started = std::time::Instant::now();
-                        let mut child = std::process::Command::new("bash").arg("-lc").arg(&req.cmd).stdin(std::process::Stdio::piped()).stdout(std::process::Stdio::piped()).stderr(std::process::Stdio::piped()).spawn()?;
-                        if !req.stdin.is_empty() { if let Some(mut sin) = child.stdin.take() { use std::io::Write as _; let _ = sin.write_all(req.stdin.as_bytes()); } }
-                        let deadline = std::time::Instant::now() + std::time::Duration::from_secs(limits.wall_sec);
+                        let mut child = std::process::Command::new("bash")
+                            .arg("-lc")
+                            .arg(&req.cmd)
+                            .stdin(std::process::Stdio::piped())
+                            .stdout(std::process::Stdio::piped())
+                            .stderr(std::process::Stdio::piped())
+                            .spawn()?;
+                        if !req.stdin.is_empty() {
+                            if let Some(mut sin) = child.stdin.take() {
+                                use std::io::Write as _;
+                                let _ = sin.write_all(req.stdin.as_bytes());
+                            }
+                        }
+                        let deadline = std::time::Instant::now()
+                            + std::time::Duration::from_secs(limits.wall_sec);
                         loop {
-                            if let Ok(Some(status)) = child.try_wait() { let _ = child.wait_with_output(); duration_ms = started.elapsed().as_millis() as u64; if let Some(c) = status.code() { exit_code = c; } break; }
-                            if std::time::Instant::now() >= deadline { let _ = child.kill(); duration_ms = started.elapsed().as_millis() as u64; exit_code = 20; break; }
+                            if let Ok(Some(status)) = child.try_wait() {
+                                let _ = child.wait_with_output();
+                                duration_ms = started.elapsed().as_millis() as u64;
+                                if let Some(c) = status.code() {
+                                    exit_code = c;
+                                }
+                                break;
+                            }
+                            if std::time::Instant::now() >= deadline {
+                                let _ = child.kill();
+                                duration_ms = started.elapsed().as_millis() as u64;
+                                exit_code = 20;
+                                break;
+                            }
                             std::thread::sleep(std::time::Duration::from_millis(25));
                         }
                     }
 
                     let thresholds = load_thresholds_from_policy(&policy_path);
                     let verdict = decide_verdict_from_thresholds(risk_score, &thresholds);
-                    let res = SpellResult { run_id: run_id.clone(), verdict: verdict.to_string(), risk_score, exit_code, duration_ms, stdout_trunc: false, sbom_attestation: None };
+                    let res = SpellResult {
+                        run_id: run_id.clone(),
+                        verdict: verdict.to_string(),
+                        risk_score,
+                        exit_code,
+                        duration_ms,
+                        stdout_trunc: false,
+                        sbom_attestation: None,
+                    };
                     let subj = format!("run.res.{}", run_id);
                     let total_delay = delay_ms + jitter_ms(jitter);
-                    if total_delay > 0 { tokio::time::sleep(std::time::Duration::from_millis(total_delay)).await; }
-                    let _ = js.publish(subj.clone(), serde_json::to_vec(&res)?.into()).await;
-                    if !(skip_ack_once && skipped_once.insert(run_id.clone())) { let _ = msg.ack().await; }
+                    if total_delay > 0 {
+                        tokio::time::sleep(std::time::Duration::from_millis(total_delay)).await;
+                    }
+                    let _ = js
+                        .publish(subj.clone(), serde_json::to_vec(&res)?.into())
+                        .await;
+                    if !(skip_ack_once && skipped_once.insert(run_id.clone())) {
+                        let _ = msg.ack().await;
+                    }
 
                     let ack_subj = format!("run.ack.{}", run_id);
                     let mut ack = nc.subscribe(ack_subj).await?;
                     let ack_ack_wait = env_u64("ACK_ACK_WAIT_SEC", 2);
-                    let _ = tokio::time::timeout(std::time::Duration::from_secs(ack_ack_wait), ack.next()).await;
-                    if let Some(path) = &metrics_file { let _ = std::fs::write(path, format!("{{\"total\":{},\"dupe\":{},\"red\":{}}}", count_total, count_dupe, count_red)); }
-                    if let Some(p) = &metrics_text { write_text_metrics(p, count_total, count_dupe, count_red, "magicrune"); }
+                    let _ = tokio::time::timeout(
+                        std::time::Duration::from_secs(ack_ack_wait),
+                        ack.next(),
+                    )
+                    .await;
+                    if let Some(path) = &metrics_file {
+                        let _ = std::fs::write(
+                            path,
+                            format!(
+                                "{{\"total\":{},\"dupe\":{},\"red\":{}}}",
+                                count_total, count_dupe, count_red
+                            ),
+                        );
+                    }
+                    if let Some(p) = &metrics_text {
+                        write_text_metrics(p, count_total, count_dupe, count_red, "magicrune");
+                    }
                     if metrics_every > 0 && count_total % metrics_every == 0 {
-                        eprintln!("magicrune consume: processed={} dupes={} reds={}", count_total, count_dupe, count_red);
+                        eprintln!(
+                            "magicrune consume: processed={} dupes={} reds={}",
+                            count_total, count_dupe, count_red
+                        );
                     }
                 }
                 return Ok(());
@@ -1307,33 +1658,58 @@ fn consume_entry(url: &str, subject: &str) -> anyhow::Result<()> {
                 let _ = nc.publish(subj, serde_json::to_vec(&res)?.into()).await;
                 continue;
             }
-            if cmd_l.contains("ssh ") { risk_score += 30; }
+            if cmd_l.contains("ssh ") {
+                risk_score += 30;
+            }
 
             // Materialize files subject to allow_fs
             let mut fs_violation = false;
             for f in &req.files {
                 let p = std::path::Path::new(&f.path);
-                if !p.is_absolute() || f.path.contains("..") { fs_violation = true; break; }
+                if !p.is_absolute() || f.path.contains("..") {
+                    fs_violation = true;
+                    break;
+                }
                 let allowed_tmp = p.starts_with("/tmp/");
                 let mut allowed = allowed_tmp;
                 if !req.allow_fs.is_empty() {
                     for pat in &req.allow_fs {
-                        if pat == "/tmp/**" && allowed_tmp { allowed = true; break; }
-                        if pat == &f.path { allowed = true; break; }
+                        if pat == "/tmp/**" && allowed_tmp {
+                            allowed = true;
+                            break;
+                        }
+                        if pat == &f.path {
+                            allowed = true;
+                            break;
+                        }
                     }
                 }
-                if !allowed { fs_violation = true; break; }
-                if let Some(dir) = p.parent() { let _ = std::fs::create_dir_all(dir); }
+                if !allowed {
+                    fs_violation = true;
+                    break;
+                }
+                if let Some(dir) = p.parent() {
+                    let _ = std::fs::create_dir_all(dir);
+                }
                 if !f.content_b64.is_empty() {
-                    if let Ok(bytes) = base64::engine::general_purpose::STANDARD.decode(&f.content_b64) {
+                    if let Ok(bytes) =
+                        base64::engine::general_purpose::STANDARD.decode(&f.content_b64)
+                    {
                         let _ = std::fs::write(p, &bytes);
                     }
-                } else { let _ = std::fs::write(p, []); }
+                } else {
+                    let _ = std::fs::write(p, []);
+                }
             }
             if fs_violation {
                 let res = SpellResult {
-                    run_id: run_id.clone(), verdict: "red".into(), risk_score: risk_score.max(80),
-                    exit_code: 20, duration_ms: 0, stdout_trunc: false, sbom_attestation: None,
+                    run_id: run_id.clone(),
+                    verdict: "red".into(),
+                    risk_score: risk_score.max(80),
+                    exit_code: 20,
+                    duration_ms: 0,
+                    stdout_trunc: false,
+                    sbom_attestation: None,
                 };
                 let subj = format!("run.res.{}", run_id);
                 let _ = nc.publish(subj, serde_json::to_vec(&res)?.into()).await;
@@ -1343,10 +1719,13 @@ fn consume_entry(url: &str, subject: &str) -> anyhow::Result<()> {
             // Execute with wall timeout
             let mut exit_code = 0i32;
             let mut duration_ms: u64 = 0;
-            if std::env::var("MAGICRUNE_DRY_RUN").ok().as_deref() != Some("1") && !req.cmd.trim().is_empty() {
+            if std::env::var("MAGICRUNE_DRY_RUN").ok().as_deref() != Some("1")
+                && !req.cmd.trim().is_empty()
+            {
                 let started = std::time::Instant::now();
                 let mut child = std::process::Command::new("bash")
-                    .arg("-lc").arg(&req.cmd)
+                    .arg("-lc")
+                    .arg(&req.cmd)
                     .stdin(std::process::Stdio::piped())
                     .stdout(std::process::Stdio::piped())
                     .stderr(std::process::Stdio::piped())
@@ -1357,18 +1736,22 @@ fn consume_entry(url: &str, subject: &str) -> anyhow::Result<()> {
                         let _ = sin.write_all(req.stdin.as_bytes());
                     }
                 }
-                let deadline = std::time::Instant::now() + std::time::Duration::from_secs(limits.wall_sec);
+                let deadline =
+                    std::time::Instant::now() + std::time::Duration::from_secs(limits.wall_sec);
                 loop {
                     if let Ok(Some(status)) = child.try_wait() {
                         let _ = child.wait_with_output();
                         duration_ms = started.elapsed().as_millis() as u64;
-                        if let Some(c) = status.code() { exit_code = c; }
+                        if let Some(c) = status.code() {
+                            exit_code = c;
+                        }
                         break;
                     }
                     if std::time::Instant::now() >= deadline {
                         let _ = child.kill();
                         duration_ms = started.elapsed().as_millis() as u64;
-                        exit_code = 20; break;
+                        exit_code = 20;
+                        break;
                     }
                     std::thread::sleep(std::time::Duration::from_millis(25));
                 }
@@ -1377,9 +1760,19 @@ fn consume_entry(url: &str, subject: &str) -> anyhow::Result<()> {
             // Verdict mapping
             let thresholds = load_thresholds_from_policy(&policy_path);
             let verdict = decide_verdict_from_thresholds(risk_score, &thresholds);
-            let res = SpellResult { run_id: run_id.clone(), verdict: verdict.to_string(), risk_score, exit_code, duration_ms, stdout_trunc: false, sbom_attestation: None };
+            let res = SpellResult {
+                run_id: run_id.clone(),
+                verdict: verdict.to_string(),
+                risk_score,
+                exit_code,
+                duration_ms,
+                stdout_trunc: false,
+                sbom_attestation: None,
+            };
             let subj = format!("run.res.{}", run_id);
-            let _ = nc.publish(subj.clone(), serde_json::to_vec(&res)?.into()).await;
+            let _ = nc
+                .publish(subj.clone(), serde_json::to_vec(&res)?.into())
+                .await;
 
             // ack-ack wait
             let ack_subj = format!("run.ack.{}", run_id);
@@ -1391,37 +1784,76 @@ fn consume_entry(url: &str, subject: &str) -> anyhow::Result<()> {
 }
 // Minimal patterns: '*' wildcard, suffix '/**' for subtree
 fn pat_matches(s: &str, pat: &str) -> bool {
-    if pat == "*" { return true; }
-    if let Some(base) = pat.strip_suffix("/**") { return s.starts_with(base); }
+    if pat == "*" {
+        return true;
+    }
+    if let Some(base) = pat.strip_suffix("/**") {
+        return s.starts_with(base);
+    }
     if pat.starts_with('*') && pat.ends_with('*') {
-        let needle = &pat[1..pat.len()-1];
+        let needle = &pat[1..pat.len() - 1];
         return s.contains(needle);
     }
-    if pat.starts_with('*') { return s.ends_with(&pat[1..]); }
-    if pat.ends_with('*') { return s.starts_with(&pat[..pat.len()-1]); }
+    if let Some(stripped) = pat.strip_prefix('*') {
+        return s.ends_with(stripped);
+    }
+    if let Some(stripped) = pat.strip_suffix('*') {
+        return s.starts_with(stripped);
+    }
     s == pat
 }
 
 fn load_fs_readonly_from_policy(path: &str) -> Vec<String> {
-    let text = match std::fs::read_to_string(path) { Ok(s) => s, Err(_) => return vec![] };
+    let text = match std::fs::read_to_string(path) {
+        Ok(s) => s,
+        Err(_) => return vec![],
+    };
     let mut out = Vec::new();
-    let mut in_caps=false; let mut in_fs=false; let mut in_ro=false;
-    let (mut ci, mut fi, mut ri) = (0usize,0usize,0usize);
+    let mut in_caps = false;
+    let mut in_fs = false;
+    let mut in_ro = false;
+    let (mut ci, mut fi, mut ri) = (0usize, 0usize, 0usize);
     for raw in text.lines() {
         let indent = raw.chars().take_while(|c| c.is_whitespace()).count();
-        let line = raw.trim(); if line.is_empty() || line.starts_with('#') { continue; }
-        if !in_caps && line == "capabilities:" { in_caps=true; ci=indent; continue; }
+        let line = raw.trim();
+        if line.is_empty() || line.starts_with('#') {
+            continue;
+        }
+        if !in_caps && line == "capabilities:" {
+            in_caps = true;
+            ci = indent;
+            continue;
+        }
         if in_caps {
-            if indent <= ci { in_caps=false; in_fs=false; in_ro=false; }
-            if !in_fs && line == "fs:" { in_fs=true; fi=indent; continue; }
+            if indent <= ci {
+                in_caps = false;
+                in_fs = false;
+                in_ro = false;
+            }
+            if !in_fs && line == "fs:" {
+                in_fs = true;
+                fi = indent;
+                continue;
+            }
             if in_fs {
-                if indent <= fi { in_fs=false; in_ro=false; }
-                if !in_ro && line == "readonly:" { in_ro=true; ri=indent; continue; }
+                if indent <= fi {
+                    in_fs = false;
+                    in_ro = false;
+                }
+                if !in_ro && line == "readonly:" {
+                    in_ro = true;
+                    ri = indent;
+                    continue;
+                }
                 if in_ro {
-                    if indent <= ri { in_ro=false; }
+                    if indent <= ri {
+                        in_ro = false;
+                    }
                     if line.starts_with("- ") {
                         let v = line.trim_start_matches("- ").trim().trim_matches('"');
-                        if !v.is_empty() { out.push(v.to_string()); }
+                        if !v.is_empty() {
+                            out.push(v.to_string());
+                        }
                     }
                 }
             }
@@ -1431,31 +1863,80 @@ fn load_fs_readonly_from_policy(path: &str) -> Vec<String> {
 }
 
 fn load_env_policy_from_policy(path: &str) -> (Vec<String>, Vec<String>) {
-    let text = match std::fs::read_to_string(path) { Ok(s) => s, Err(_) => return (vec![], vec![]) };
-    let mut allow = Vec::new(); let mut deny = Vec::new();
-    let mut in_caps=false; let mut in_env=false; let mut in_allow=false; let mut in_deny=false;
-    let (mut ci, mut ei, mut ai, mut di) = (0usize,0usize,0usize,0usize);
+    let text = match std::fs::read_to_string(path) {
+        Ok(s) => s,
+        Err(_) => return (vec![], vec![]),
+    };
+    let mut allow = Vec::new();
+    let mut deny = Vec::new();
+    let mut in_caps = false;
+    let mut in_env = false;
+    let mut in_allow = false;
+    let mut in_deny = false;
+    let (mut ci, mut ei, mut ai, mut di) = (0usize, 0usize, 0usize, 0usize);
     for raw in text.lines() {
         let indent = raw.chars().take_while(|c| c.is_whitespace()).count();
-        let line = raw.trim(); if line.is_empty() || line.starts_with('#') { continue; }
-        if !in_caps && line == "capabilities:" { in_caps=true; ci=indent; continue; }
+        let line = raw.trim();
+        if line.is_empty() || line.starts_with('#') {
+            continue;
+        }
+        if !in_caps && line == "capabilities:" {
+            in_caps = true;
+            ci = indent;
+            continue;
+        }
         if in_caps {
-            if indent <= ci { in_caps=false; in_env=false; in_allow=false; in_deny=false; }
-            if !in_env && line == "env:" { in_env=true; ei=indent; continue; }
+            if indent <= ci {
+                in_caps = false;
+                in_env = false;
+                in_allow = false;
+                in_deny = false;
+            }
+            if !in_env && line == "env:" {
+                in_env = true;
+                ei = indent;
+                continue;
+            }
             if in_env {
-                if indent <= ei { in_env=false; in_allow=false; in_deny=false; }
-                if !in_allow && line == "allow:" { in_allow=true; ai=indent; continue; }
-                if !in_deny && line == "deny:" { in_deny=true; di=indent; continue; }
+                if indent <= ei {
+                    in_env = false;
+                    in_allow = false;
+                    in_deny = false;
+                }
+                if !in_allow && line == "allow:" {
+                    in_allow = true;
+                    ai = indent;
+                    continue;
+                }
+                if !in_deny && line == "deny:" {
+                    in_deny = true;
+                    di = indent;
+                    continue;
+                }
                 if in_allow {
-                    if indent <= ai { in_allow=false; }
-                    if line.starts_with("- ") { let v=line.trim_start_matches("- ").trim().trim_matches('"'); if !v.is_empty(){ allow.push(v.to_string()); } }
+                    if indent <= ai {
+                        in_allow = false;
+                    }
+                    if line.starts_with("- ") {
+                        let v = line.trim_start_matches("- ").trim().trim_matches('"');
+                        if !v.is_empty() {
+                            allow.push(v.to_string());
+                        }
+                    }
                 }
                 if in_deny {
-                    if indent <= di { in_deny=false; }
-                    if line.starts_with("- ") { let v=line.trim_start_matches("- ").trim().trim_matches('"'); if !v.is_empty(){ deny.push(v.to_string()); } }
+                    if indent <= di {
+                        in_deny = false;
+                    }
+                    if line.starts_with("- ") {
+                        let v = line.trim_start_matches("- ").trim().trim_matches('"');
+                        if !v.is_empty() {
+                            deny.push(v.to_string());
+                        }
+                    }
                 }
             }
         }
     }
-    (allow,deny)
+    (allow, deny)
 }

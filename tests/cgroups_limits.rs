@@ -7,9 +7,17 @@ fn cgroups_opt_in_smoke() {
         return;
     }
     let st = std::process::Command::new("cargo")
-        .args(["run","--bin","magicrune","--","exec","-f","samples/ok.json"]) 
-        .env("MAGICRUNE_CGROUPS","1")
-        .status().expect("run magicrune");
+        .args([
+            "run",
+            "--bin",
+            "magicrune",
+            "--",
+            "exec",
+            "-f",
+            "samples/ok.json",
+        ])
+        .env("MAGICRUNE_CGROUPS", "1")
+        .status()
+        .expect("run magicrune");
     assert!(st.success());
 }
-
