@@ -28,7 +28,7 @@ jobs:
       - name: Install latest cargo-audit
         run: cargo install cargo-audit --locked --force
       - name: Security audit (locked)
-        run: cargo audit --locked
+        run: cargo audit
       - uses: Swatinem/rust-cache@v2
       - name: Test (Wasm fallback)
         run: |

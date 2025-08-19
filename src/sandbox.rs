@@ -309,12 +309,12 @@ async fn simple_exec_with_timeout(cmd: &str, stdin: &[u8], spec: &SandboxSpec) -
         use nix::sys::resource::{setrlimit, Resource};
         // Note: nix v0.29 uses rlim_t directly instead of Rlim type
         use std::os::unix::process::CommandExt;
-        
+
         // Copy values from spec before the closure to avoid lifetime issues
         let cpu_ms = spec.cpu_ms;
         let memory_mb = spec.memory_mb;
         let pids = spec.pids;
-        
+
         let _ = unsafe {
             command.pre_exec(move || {
                 // Optional overlayfs(ro) + tmpfs:/tmp (best-effort)
