@@ -17,6 +17,16 @@ jobs:
           rustup toolchain install 1.82.0 --profile minimal
           rustup default 1.82.0
           rustup override set 1.82.0
+      - name: Pre-fetch (locked)
+        run: cargo fetch --locked --quiet
+      - name: Format & Clippy gates
+        run: |
+          cargo fmt --all -- --check
+          cargo clippy --all-targets --all-features -- -D warnings
+      - name: Security audit (no inline ignore; uses .cargo/audit.toml)
+        run: |
+          cargo install cargo-audit --locked --version 0.21.1
+          cargo audit --locked
       - uses: Swatinem/rust-cache@v2
       - name: Test (Wasm fallback)
         run: |
@@ -90,3 +100,24 @@ jobs:
             sbom.spdx.json
             sbom.spdx.json.sig
             dist/checksums.txt
+
+  coverage:
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@v1
+        with:
+          toolchain: 1.82.0
+          components: rustfmt, clippy
+      - uses: Swatinem/rust-cache@v2
+      - name: Install tarpaulin
+        run: cargo install cargo-tarpaulin --locked --version 0.27.3
+      - name: Run coverage (fail < 80%)
+        env:
+          RUST_LOG: warn
+        run: |
+          cargo tarpaulin --workspace --all-features \
+            --engine llvm --timeout 180 \
+            --fail-under 80

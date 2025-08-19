@@ -1,0 +1,10 @@
+{
+  "cmd": "bash -lc 'echo hello && exit 0'",
+  "stdin": "",
+  "env": { "RUST_LOG": "warn" },
+  "files": [],
+  "policy_id": "default",
+  "timeout_sec": 5,
+  "allow_net": [],
+  "allow_fs": ["/tmp/**"]
+}

@@ -1,5 +1,8 @@
 [advisories]
-ignore = []
+ignore = [
+  # "RUSTSEC-YYYY-XXXX", # reason = "…", until = "2025-12-31"
+]
+informational_warnings = ["unmaintained", "unsound", "yanked"]
 
 [output]
 quiet = false

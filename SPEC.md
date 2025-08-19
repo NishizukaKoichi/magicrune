@@ -1,38 +1,44 @@
-# MagicRune （Rust 2021 / MSRV 1.80 固定）
+# **MagicRune （Rust 2021 / MSRV 1.82 固定）**
 
-## 0. Purpose
+  
+
+## **0. Purpose**
+
+  
 
 > **AI／外部生成コードを “1 回だけ” 安全に実行し、結果を返す唯一のゲート**
-> 
-> - 100% Linux サンドボックス（Wasm フォールバック）
->     
-> - 行動ログ → AI Grading → green / yellow / red
->     
-> - 結果は CLI 出力 or NATS JetStream 返信（Exactly-Once 相当の運用） ([docs.nats.io](https://docs.nats.io/using-nats/developer/develop_jetstream/model_deep_dive?utm_source=chatgpt.com "JetStream Model Deep Dive | NATS Docs"))
->     
+
+- > 100% Linux サンドボックス（Wasm フォールバック）
+    
+- > 行動ログ → AI Grading → green / yellow / red
+    
+- > 結果は CLI 出力 or NATS JetStream 返信（Exactly-Once 相当の運用）
+    
 
 ---
 
-## 1. 採択スタック（バージョン固定）
+## **1. 採択スタック（バージョン固定）**
 
-|Layer|Tech / Version|Pin / 根拠|
+|**Layer**|**Tech / Version**|**Pin / 根拠**|
 |---|---|---|
-|Language / Async|**Rust 2021 + MSRV = 1.80**, **Tokio 1.47.x**|Cargo `rust-version = "1.80"` 固定。Tokio 1.47 公開（2025-07-25）。 ([blog.rust-lang.org](https://blog.rust-lang.org/2024/07/25/Rust-1.80.0/?utm_source=chatgpt.com "Announcing Rust 1.80.0 \| Rust Blog"), [GitHub](https://github.com/tokio-rs/tokio/discussions/7483?utm_source=chatgpt.com "Tokio v1.47.0 · tokio-rs tokio · Discussion #7483 · GitHub"))|
-|Messaging|**NATS JetStream**（client: `async-nats` 0.39系想定・JetStream対応）|JetStream の重複排除（`Nats-Msg-Id`）と “confirmed ack / double-ack 同等” を活用。 ([docs.nats.io](https://docs.nats.io/nats-concepts/jetstream/streams?utm_source=chatgpt.com "Streams \| NATS Docs"), [natsbyexample.com](https://natsbyexample.com/examples/jetstream/ack-ack/go?utm_source=chatgpt.com "NATS by Example - Confirmed Message Ack (Go)"))|
-|Sandbox（fallback）|**Wasmtime 15.x**（WASI）|15系は 2023/11～の安定系列。WASI 実行とリソース制限（ResourceLimiter / Fuel / Epoch）を利用。 ([Docs.rs](https://docs.rs/crate/wasmtime-wit-bindgen/latest?utm_source=chatgpt.com "wasmtime-wit-bindgen 15.0.1 - Docs.rs"), [docs.wasmtime.dev](https://docs.wasmtime.dev/examples-interrupting-wasm.html?utm_source=chatgpt.com "Interrupting Execution - Wasmtime"))|
-|Sandbox（native）|Linux namespaces（PID/NET/MNT/USER/IPC/UTS）+ **cgroups v2** + seccomp + overlayfs(ro) + tmpfs(`/tmp`)|カーネル一次資料に基づき採用。 ([man7.org](https://www.man7.org/linux/man-pages/man7/namespaces.7.html?utm_source=chatgpt.com "namespaces (7) — Linux manual page"), [kernel.org](https://www.kernel.org/doc/html/latest/admin-guide/cgroup-v2.html?utm_source=chatgpt.com "Control Group v2 — The Linux Kernel documentation"))|
-|SBOM / Sign|**Syft**（SPDX JSON）+ **Cosign**（sign-blob：OIDC keyless）|CI で SBOM 生成と署名（id-token: write）。 ([GitHub](https://github.com/anchore/sbom-action?utm_source=chatgpt.com "GitHub - anchore/sbom-action: GitHub Action for creating software bill ..."), [Sigstore](https://docs.sigstore.dev/cosign/signing/signing_with_blobs/?utm_source=chatgpt.com "Signing Blobs - Sigstore"))|
-|CI|**GitHub Actions**（Ubuntu 24.04 固定ランナー、Artifacts v4）+ `dtolnay/rust-toolchain` + `Swatinem/rust-cache`|ランナー・アーティファクトは v4 世代を利用、速度・互換に注意。 ([GitHub](https://github.com/dtolnay/rust-toolchain?utm_source=chatgpt.com "GitHub - dtolnay/rust-toolchain: Concise GitHub Action for installing a ..."), [The GitHub Blog](https://github.blog/news-insights/product-news/get-started-with-v4-of-github-actions-artifacts/?utm_source=chatgpt.com "Get started with v4 of GitHub Actions Artifacts"))|
+|Language / Async|**Rust 2021 + MSRV = 1.82**, **Tokio 1.47.x**|Cargo の rust-version = "1.82" に固定（依存の要件満たすため）。Tokio は 1.47 系を固定。|
+|Messaging|**NATS JetStream**（client: async-nats 0.39系想定・JetStream対応）|JetStream のデデュープ（Nats-Msg-Id）と confirmed ack / double-ack 同等を活用。|
+|Sandbox（fallback）|**Wasmtime 15.x**（WASI）|WASI 実行とリソース制限（ResourceLimiter / Fuel / Epoch）を利用。|
+|Sandbox（native）|Linux namespaces（PID/NET/MNT/USER/IPC/UTS）+ **cgroups v2** + seccomp + overlayfs(ro) + tmpfs(/tmp)|カーネル一次資料に基づく。|
+|SBOM / Sign|**Syft**（SPDX JSON）+ **Cosign**（sign-blob：OIDC keyless）|CI で SBOM 生成と署名（id-token: write）。|
+|CI|**GitHub Actions**（Ubuntu 24.04 固定ランナー、Artifacts v4）+ dtolnay/rust-toolchain + Swatinem/rust-cache|rust-toolchain を 1.82 に固定。|
 
-> 注：`async-nats` は 0.x 系で継続更新中。JetStream/ACK・KV・Object Store 等は同 crate が提供。 ([Docs.rs](https://docs.rs/crate/async-nats/latest?utm_source=chatgpt.com "async-nats 0.41.0 - Docs.rs"))
+> 注：async-nats は 0.x 系で継続更新。JetStream/ACK・KV・Object Store などは同 crate が提供。
 
 ---
 
-## 2. インタフェース
+## **2. インタフェース**
 
-### 2.1 CLI
+  
 
-```bash
+### **2.1 CLI**
+
+```
 magicrune exec \
   -f request.json        # 必須: SpellRequest
   --policy policy.yml    # 省略時: policies/default.policy.yml
@@ -42,7 +48,7 @@ magicrune exec \
   --strict               # schema NG で exit!=0
 ```
 
-|Exit|意味|
+|**Exit**|**意味**|
 |---|---|
 |0|green|
 |10|yellow|
@@ -52,22 +58,24 @@ magicrune exec \
 |3|ポリシー違反で未実行|
 |4|内部エラー|
 
-### 2.2 JetStream
+### **2.2 JetStream**
 
-|Subject|内容|
+|**Subject**|**内容**|
 |---|---|
-|`run.req.*`|**Msg-Id = SHA-256(request)** をヘッダ `Nats-Msg-Id` に付与（デデュープ窓内で重複無視）|
-|`run.res.$RUN_ID`|SpellResult を返信（confirmed ack / double-ack 相当で確実化）|
-
-> デデュープは header `Nats-Msg-Id` による idempotent 書き込み、ACK は「受信側からの ack をサーバが確認応答（ack-ack）」する流儀を採用。 ([docs.nats.io](https://docs.nats.io/nats-concepts/jetstream/headers?utm_source=chatgpt.com "Headers | NATS Docs"), [natsbyexample.com](https://natsbyexample.com/examples/jetstream/ack-ack/go?utm_source=chatgpt.com "NATS by Example - Confirmed Message Ack (Go)"))
+|run.req.*|**Msg-Id = SHA-256(request)** をヘッダ Nats-Msg-Id に付与（デデュープ窓内で重複無視）|
+|run.res.$RUN_ID|SpellResult を返信（confirmed ack / double-ack 相当で確実化）|
 
 ---
 
-## 3. JSON Schema（抜粋）
+## **3. JSON Schema（抜粋）**
 
-### 3.1 `schemas/spell_request.schema.json`
+  
 
-```jsonc
+### **3.1** 
+
+### **schemas/spell_request.schema.json**
+
+```
 {
   "cmd": "bash -lc 'cargo test'",
   "stdin": "",
@@ -82,9 +90,11 @@ magicrune exec \
 }
 ```
 
-### 3.2 `schemas/spell_result.schema.json`
+### **3.2** 
 
-```jsonc
+### **schemas/spell_result.schema.json**
+
+```
 {
   "run_id": "r_01H8C6W6PS6KD5R463JTDY7G9",
   "verdict": "green",
@@ -98,24 +108,22 @@ magicrune exec \
 
 ---
 
-## 4. サンドボックス仕様
+## **4. サンドボックス仕様**
 
-|項目|Linux (native)|Wasm (Wasmtime 15)|
+|**項目**|**Linux (native)**|**Wasm (Wasmtime 15)**|
 |---|---|---|
 |Namespaces|PID / NET / MNT / USER / IPC / UTS|—|
-|FS|overlayfs 読取専用、`/tmp` は **tmpfs**|WASI で `--dir=/tmp` のみ RW|
-|seccomp|allow-list（`read/write/exit/clock_*` 等）|—|
-|cgroups v2|`cpu.max`, `memory.max`, `pids.max`|Store limiter / Fuel / Epoch で CPU/時間相当を制御|
+|FS|overlayfs 読取専用、/tmp は **tmpfs**|WASI で --dir=/tmp のみ RW|
+|seccomp|allow-list（read/write/exit/clock_* 等）|—|
+|cgroups v2|cpu.max, memory.max, pids.max|Store limiter / Fuel / Epoch|
 |Net|既定 deny、allowlist|既定で無効|
-|Time|≤ 60 s|Fuel / Epoch interrupt で制御|
-
-> Linux の隔離機構／cgroups v2／overlayfs／tmpfs はカーネル一次資料。Wasmtime は ResourceLimiter・Fuel・Epoch により WASI 実行を**確定停止**させられる。 ([man7.org](https://www.man7.org/linux/man-pages/man7/namespaces.7.html?utm_source=chatgpt.com "namespaces (7) — Linux manual page"), [kernel.org](https://www.kernel.org/doc/html/latest/admin-guide/cgroup-v2.html?utm_source=chatgpt.com "Control Group v2 — The Linux Kernel documentation"), [Docs.rs](https://docs.rs/wasmtime/latest/wasmtime/trait.ResourceLimiter.html?utm_source=chatgpt.com "ResourceLimiter in wasmtime - Rust - Docs.rs"), [docs.wasmtime.dev](https://docs.wasmtime.dev/examples-interrupting-wasm.html?utm_source=chatgpt.com "Interrupting Execution - Wasmtime"))
+|Time|≤ 60 s|Fuel / Epoch interrupt|
 
 ---
 
-## 5. Policy DSL（最小）
+## **5. Policy DSL（最小）**
 
-```yaml
+```
 version: 1
 capabilities:
   fs:
@@ -137,20 +145,20 @@ grading:
 
 ---
 
-## 6. Grading Logic
+## **6. Grading Logic**
 
-1. 静的スコア（例：未許可 NET = +40、`.ssh` 読み = +30 など）
+1. 静的スコア（例：未許可 NET = +40、.ssh 読み = +30 など）
     
 2. ML 補正（RuneSage local）
     
-3. `risk_score = static + ml` → verdict
+3. risk_score = static + ml → verdict
     
-4. verdict=red は stdout/stderr を `quarantine/` へ隔離
+4. verdict=red は stdout/stderr を quarantine/ へ隔離
     
 
 ---
 
-## 7. ディレクトリ
+## **7. ディレクトリ**
 
 ```
 magicrune/
@@ -168,18 +176,18 @@ magicrune/
 
 ---
 
-## 8. Cargo.toml（ピン留め例）
+## **8. Cargo.toml（ピン留め例）**
 
-```toml
+```
 [package]
 name = "magicrune"
 version = "0.1.0"
 edition = "2021"
-rust-version = "1.80"   # MSRV 固定（Rust 1.80 リリース根拠）  # :contentReference[oaicite:10]{index=10}
+rust-version = "1.82"   # MSRV 固定
 
 [dependencies]
-tokio = { version = "1.47", features = ["rt-multi-thread","macros","process","time"] }  # :contentReference[oaicite:11]{index=11}
-async-nats = { version = "0.39", features = ["jetstream"] }                               # :contentReference[oaicite:12]{index=12}
+tokio = { version = "1.47", features = ["rt-multi-thread","macros","process","time"] }
+async-nats = { version = "0.39", features = ["jetstream"] }
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
 clap = { version = "4.5", features = ["derive"] }
@@ -190,34 +198,43 @@ thiserror = "1.0"
 nix = "0.29"
 # wasm fallback
 wasmtime = "15"
-wasmtime-wasi = "15"    # 15系が存在（2023/11～）                                           # :contentReference[oaicite:13]{index=13}
+wasmtime-wasi = "15"
 ```
 
 ---
 
-## 9. 受け入れ基準（DoD）
+## **9. 受け入れ基準（DoD）**
 
-1. `magicrune exec -f samples/ok.json` → `result.json`（verdict=green）
+1. magicrune exec -f samples/ok.json → result.json（verdict=green）
     
 2. 同一 request + seed → 出力ハッシュ不変
     
-3. JetStream で同一 `Nats-Msg-Id` → 実行 1 回（重複無視） ([docs.nats.io](https://docs.nats.io/nats-concepts/jetstream/headers?utm_source=chatgpt.com "Headers | NATS Docs"))
+3. JetStream で同一 Nats-Msg-Id → 実行 1 回（重複無視）
     
-4. verdict=red → `quarantine/` へ隔離
+4. verdict=red → quarantine/ へ隔離
     
-5. `cargo test --locked` で schema 検証・ユニット全通過
+5. cargo test --locked で schema 検証・ユニット全通過
     
 
 ---
 
-## 10. GitHub Actions（CI 専用・**確実に通る** 設計）
+## **10. GitHub Actions（CI 専用・**
 
-> _Linux ネイティブ沙箱（unshare/mount/cgroups）は GH ホストでは特権不足のため基本**スキップ**。CI は Wasmtime フォールバックで機能検証します。_  
-> _SBOM 署名は OIDC **keyless** を使用（`permissions: id-token: write` 必須）。_ ([Sigstore](https://docs.sigstore.dev/cosign/signing/signing_with_blobs/?utm_source=chatgpt.com "Signing Blobs - Sigstore"))
+## **確実に通る**
 
-`.github/workflows/ci.yml`
+##  **設計）**
 
-```yaml
+  
+
+> _Linux ネイティブ沙箱（unshare/mount/cgroups）は GH ホストでは特権不足のため基本スキップ。CI は Wasmtime フォールバックで機能検証。_
+
+> _SBOM 署名は OIDC_ **_keyless_** _を使用（__permissions: id-token: write_ _必須）。_
+
+  
+
+.github/workflows/ci.yml
+
+```
 name: magicrune-ci
 on:
   push:
@@ -225,17 +242,22 @@ on:
 
 permissions:
   contents: read
-  id-token: write   # cosign keyless で必要  # :contentReference[oaicite:16]{index=16}
+  id-token: write
 
 jobs:
   test-build:
-    runs-on: ubuntu-24.04   # ランナー固定
+    runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v4
-      - uses: dtolnay/rust-toolchain@stable    # rustup で MSRV 遵守      # :contentReference[oaicite:17]{index=17}
-      - uses: Swatinem/rust-cache@v2           # ビルドキャッシュ         # :contentReference[oaicite:18]{index=18}
 
-      # Wasm フォールバックでテスト（GH 上は privilege が足りないため）
+      - name: Set up Rust toolchain (MSRV)
+        uses: dtolnay/rust-toolchain@v1
+        with:
+          toolchain: 1.82.0
+          override: true
+
+      - uses: Swatinem/rust-cache@v2
+
       - name: Test (wasm fallback)
         run: |
           export MAGICRUNE_FORCE_WASM=1
@@ -244,29 +266,25 @@ jobs:
       - name: Build (linux-gnu host)
         run: cargo build --release --workspace --locked
 
-      # クロスビルド（musl 2アーキ）: cross-rs を使用
       - name: Install cross
-        run: cargo install cross --git https://github.com/cross-rs/cross  # :contentReference[oaicite:19]{index=19}
+        run: cargo install cross --git https://github.com/cross-rs/cross
       - name: Build musl (x86_64)
         run: cross build --release --target x86_64-unknown-linux-musl
       - name: Build musl (aarch64)
         run: cross build --release --target aarch64-unknown-linux-musl
 
-      # SBOM 生成（SPDX JSON）
       - name: Generate SBOM (Syft)
-        uses: anchore/sbom-action@v0   # SPDX JSON を成果物化          # :contentReference[oaicite:20]{index=20}
+        uses: anchore/sbom-action@v0
         with:
           output-file: sbom.spdx.json
 
-      # 署名（keyless）
       - name: Install cosign
         uses: sigstore/cosign-installer@v3
       - name: Sign SBOM (OIDC keyless)
-        run: cosign sign-blob --yes --bundle sbom.spdx.json  # bundle 形式推奨  # :contentReference[oaicite:21]{index=21}
+        run: cosign sign-blob --yes --bundle sbom.spdx.json
 
-      # アーティファクト v4
       - name: Upload artifacts
-        uses: actions/upload-artifact@v4                        # v4 世代       # :contentReference[oaicite:22]{index=22}
+        uses: actions/upload-artifact@v4
         with:
           name: magicrune-${{ github.sha }}
           path: |
@@ -278,9 +296,9 @@ jobs:
 
 ---
 
-## 11. Quick Start（ローカル）
+## **11. Quick Start（ローカル）**
 
-```bash
+```
 # 1) リポジトリ作成
 cargo new --bin magicrune && cd magicrune
 
@@ -295,14 +313,14 @@ sudo -E env RUST_LOG=info cargo run -- exec -f samples/ok.json --timeout 10
 
 ---
 
-## 12. 実装メモ（根拠）
+## **12. 実装メモ（根拠）**
 
-- **JetStream**：`Nats-Msg-Id` で**重複排除**、confirmed ack（クライアント側 ack の**確認応答**）が可能。Exactly-Once 相当の運用が組める。 ([docs.nats.io](https://docs.nats.io/nats-concepts/jetstream/headers?utm_source=chatgpt.com "Headers | NATS Docs"), [natsbyexample.com](https://natsbyexample.com/examples/jetstream/ack-ack/go?utm_source=chatgpt.com "NATS by Example - Confirmed Message Ack (Go)"))
+- **JetStream**：Nats-Msg-Id による重複排除、confirmed ack（クライアント ack の確認応答）で Exactly-Once 相当の運用。
     
-- **Wasmtime 15**：WASI 実行・**ResourceLimiter**、Fuel／**Epoch interruption** による実行停止が可能。 ([Docs.rs](https://docs.rs/wasmtime/latest/wasmtime/trait.ResourceLimiter.html?utm_source=chatgpt.com "ResourceLimiter in wasmtime - Rust - Docs.rs"), [docs.wasmtime.dev](https://docs.wasmtime.dev/examples-interrupting-wasm.html?utm_source=chatgpt.com "Interrupting Execution - Wasmtime"))
+- **Wasmtime 15**：WASI 実行・ResourceLimiter／Fuel／Epoch interruption により確定停止が可能。
     
-- **Linux 隔離**：namespaces／cgroups v2／overlayfs／tmpfs はカーネル文書に準拠。 ([man7.org](https://www.man7.org/linux/man-pages/man7/namespaces.7.html?utm_source=chatgpt.com "namespaces (7) — Linux manual page"), [kernel.org](https://www.kernel.org/doc/html/latest/admin-guide/cgroup-v2.html?utm_source=chatgpt.com "Control Group v2 — The Linux Kernel documentation"))
+- **Linux 隔離**：namespaces／cgroups v2／overlayfs／tmpfs はカーネル文書どおり。
     
-- **CI**：`dtolnay/rust-toolchain`・`rust-cache` は Rust プロジェクトのデファクト。Artifacts v4 を利用。 ([GitHub](https://github.com/dtolnay/rust-toolchain?utm_source=chatgpt.com "GitHub - dtolnay/rust-toolchain: Concise GitHub Action for installing a ..."), [The GitHub Blog](https://github.blog/news-insights/product-news/get-started-with-v4-of-github-actions-artifacts/?utm_source=chatgpt.com "Get started with v4 of GitHub Actions Artifacts"))
+- **CI**：dtolnay/rust-toolchain／rust-cache／Artifacts v4 を使用。
     
-- **SBOM/署名**：Syft で SPDX、Cosign の **sign-blob** はファイル署名（bundle 推奨）。 ([GitHub](https://github.com/anchore/sbom-action?utm_source=chatgpt.com "GitHub - anchore/sbom-action: GitHub Action for creating software bill ..."), [Sigstore](https://docs.sigstore.dev/cosign/signing/signing_with_blobs/?utm_source=chatgpt.com "Signing Blobs - Sigstore"))
+- **SBOM/署名**：Syft（SPDX）＋ Cosign（sign-blob, OIDC keyless）。
