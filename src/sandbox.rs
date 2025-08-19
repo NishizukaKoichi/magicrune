@@ -309,8 +309,14 @@ async fn simple_exec_with_timeout(cmd: &str, stdin: &[u8], spec: &SandboxSpec) -
         use nix::sys::resource::{setrlimit, Resource};
         // Note: nix v0.29 uses rlim_t directly instead of Rlim type
         use std::os::unix::process::CommandExt;
+        
+        // Copy values from spec before the closure to avoid lifetime issues
+        let cpu_ms = spec.cpu_ms;
+        let memory_mb = spec.memory_mb;
+        let pids = spec.pids;
+        
         let _ = unsafe {
-            command.pre_exec(|| {
+            command.pre_exec(move || {
                 // Optional overlayfs(ro) + tmpfs:/tmp (best-effort)
                 #[cfg(all(target_os = "linux", feature = "linux_native"))]
                 {
@@ -327,18 +333,18 @@ async fn simple_exec_with_timeout(cmd: &str, stdin: &[u8], spec: &SandboxSpec) -
                     }
                 }
                 // CPU time limit (seconds)
-                let cpu_secs = (spec.cpu_ms / 1000) as u64;
+                let cpu_secs = (cpu_ms / 1000) as u64;
                 if cpu_secs > 0 {
                     let _ = setrlimit(Resource::RLIMIT_CPU, cpu_secs, cpu_secs);
                 }
                 // Address space (bytes)
-                let mem = (spec.memory_mb as u64) * 1024 * 1024;
+                let mem = (memory_mb as u64) * 1024 * 1024;
                 if mem > 0 {
                     let _ = setrlimit(Resource::RLIMIT_AS, mem, mem);
                 }
                 // pids
-                if spec.pids > 0 {
-                    let _ = setrlimit(Resource::RLIMIT_NPROC, spec.pids as u64, spec.pids as u64);
+                if pids > 0 {
+                    let _ = setrlimit(Resource::RLIMIT_NPROC, pids as u64, pids as u64);
                 }
                 // Optional seccomp enable (best-effort) when feature/native and env toggled
                 #[cfg(all(target_os = "linux", feature = "native_sandbox"))]
