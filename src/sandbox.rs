@@ -62,8 +62,8 @@ pub async fn exec_wasm(_wasm_bytes: &[u8], _spec: &SandboxSpec) -> SandboxOutcom
 
 #[cfg(all(target_os = "linux", feature = "native_sandbox"))]
 fn seccomp_minimal_allow() -> Result<(), String> {
-    use libseccomp::*;
     use libseccomp::error::ScmpError;
+    use libseccomp::*;
     // Default deny
     let mut filter =
         ScmpFilterContext::new_filter(ScmpAction::Errno(1)).map_err(|e| format!("{:?}", e))?;
