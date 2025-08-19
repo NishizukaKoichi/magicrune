@@ -62,15 +62,15 @@ pub async fn exec_wasm(_wasm_bytes: &[u8], _spec: &SandboxSpec) -> SandboxOutcom
 
 #[cfg(all(target_os = "linux", feature = "native_sandbox"))]
 fn seccomp_minimal_allow() -> Result<(), String> {
-    use libseccomp::error::ScmpError;
     use libseccomp::*;
+    // Note: ScmpError is not available in libseccomp v0.3, using String for errors
     // Default deny
     let mut filter =
         ScmpFilterContext::new_filter(ScmpAction::Errno(1)).map_err(|e| format!("{:?}", e))?;
     let arch = get_api();
     let _ = arch; // touch API to satisfy MSRV lint
-    let allow = |f: &mut ScmpFilterContext, sys: ScmpSyscall| -> Result<(), ScmpError> {
-        f.add_rule(ScmpAction::Allow, sys, &[])
+    let allow = |f: &mut ScmpFilterContext, sys: ScmpSyscall| -> Result<(), String> {
+        f.add_rule(ScmpAction::Allow, sys).map_err(|e| format!("{:?}", e))
     };
     // Essential syscalls
     let mut list = vec![
@@ -305,7 +305,8 @@ async fn simple_exec_with_timeout(cmd: &str, stdin: &[u8], spec: &SandboxSpec) -
     // linux_native feature is enabled on Linux.
     #[cfg(all(target_os = "linux", feature = "linux_native"))]
     {
-        use nix::sys::resource::{setrlimit, Resource, Rlim};
+        use nix::sys::resource::{setrlimit, Resource};
+        // Note: nix v0.29 uses rlim_t directly instead of Rlim type
         use std::os::unix::process::CommandExt;
         let _ = unsafe {
             command.pre_exec(|| {
@@ -329,8 +330,8 @@ async fn simple_exec_with_timeout(cmd: &str, stdin: &[u8], spec: &SandboxSpec) -
                 if cpu_secs > 0 {
                     let _ = setrlimit(
                         Resource::RLIMIT_CPU,
-                        Rlim::from_raw(cpu_secs),
-                        Rlim::from_raw(cpu_secs),
+                        cpu_secs,
+                        cpu_secs,
                     );
                 }
                 // Address space (bytes)
@@ -338,16 +339,16 @@ async fn simple_exec_with_timeout(cmd: &str, stdin: &[u8], spec: &SandboxSpec) -
                 if mem > 0 {
                     let _ = setrlimit(
                         Resource::RLIMIT_AS,
-                        Rlim::from_raw(mem),
-                        Rlim::from_raw(mem),
+                        mem,
+                        mem,
                     );
                 }
                 // pids
                 if spec.pids > 0 {
                     let _ = setrlimit(
                         Resource::RLIMIT_NPROC,
-                        Rlim::from_raw(spec.pids as u64),
-                        Rlim::from_raw(spec.pids as u64),
+                        spec.pids as u64,
+                        spec.pids as u64,
                     );
                 }
                 // Optional seccomp enable (best-effort) when feature/native and env toggled
