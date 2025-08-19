@@ -32,8 +32,7 @@ jobs:
           if [ ! -f Cargo.lock ]; then
             cargo generate-lockfile
           fi
-      - name: Update lockfile (prune unused)
-        run: cargo update -q
+      # Use committed Cargo.lock for reproducible audit
       - name: Install latest cargo-audit
         run: cargo install cargo-audit --locked --force
       - name: cargo audit (no inline ignore)
