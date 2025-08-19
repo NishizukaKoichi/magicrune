@@ -45,14 +45,7 @@
 2) パブリッシャでリクエスト送信＋返信受信
    - `cargo run --features jet --bin js_publish -- samples/ok.json`
 
-MSRV=1.80 固定で `--features jet` を利用する場合、依存解決が rustc 1.81+ を要求する可能性があります。その場合の回避策:
-
-- 一時的に Rust 1.82 へ切替（推奨）: `rustup override set 1.82.0`（検証後 `rustup override unset`）
-- もしくは依存を MSRV 1.80 互換へピン止め（要ネット）:
-  - `cargo update -p url --precise 2.4.1`
-  - `cargo update -p ed25519-dalek --precise 2.1.1`
-
-どちらの方法でも `cargo build --features jet` が通ればスモーク可能です。
+MSRV は Rust 1.82 固定です。`--features jet` でも追加の回避策は不要です。
 
 #### 運用チューニング用の環境変数
 
@@ -65,7 +58,7 @@ MSRV=1.80 固定で `--features jet` を利用する場合、依存解決が rus
 
 ### CI 二段構成（MSRVとcross）
 
-- `msrv-check` ジョブ: Rust 1.80.0 で `cargo test --locked` / `cargo build --locked`
+- `msrv-check` ジョブ: Rust 1.82.0 で `cargo test --locked` / `cargo build --locked`
 - `cross-build` ジョブ: nightly に切替後 `cargo install cross` → musl 2ターゲット build
 - 成果物: musl バイナリ2種, SBOM (`sbom.spdx.json`), 署名 (`sbom.spdx.json.sig`), `dist/checksums.txt`
 
