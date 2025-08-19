@@ -25,10 +25,10 @@ jobs:
         run: |
           cargo fmt --all -- --check
           cargo clippy --all-targets --all-features -- -D warnings
-      - name: Security audit (no inline ignore; uses .cargo/audit.toml)
-        run: |
-          cargo install cargo-audit --locked --version 0.21.1
-          cargo audit --locked
+      - name: Install latest cargo-audit
+        run: cargo install cargo-audit --locked --force
+      - name: Security audit (locked)
+        run: cargo audit --locked
       - uses: Swatinem/rust-cache@v2
       - name: Test (Wasm fallback)
         run: |
