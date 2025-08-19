@@ -70,7 +70,8 @@ fn seccomp_minimal_allow() -> Result<(), String> {
     let arch = get_api();
     let _ = arch; // touch API to satisfy MSRV lint
     let allow = |f: &mut ScmpFilterContext, sys: ScmpSyscall| -> Result<(), String> {
-        f.add_rule(ScmpAction::Allow, sys).map_err(|e| format!("{:?}", e))
+        f.add_rule(ScmpAction::Allow, sys)
+            .map_err(|e| format!("{:?}", e))
     };
     // Essential syscalls
     let mut list = vec![
@@ -328,28 +329,16 @@ async fn simple_exec_with_timeout(cmd: &str, stdin: &[u8], spec: &SandboxSpec) -
                 // CPU time limit (seconds)
                 let cpu_secs = (spec.cpu_ms / 1000) as u64;
                 if cpu_secs > 0 {
-                    let _ = setrlimit(
-                        Resource::RLIMIT_CPU,
-                        cpu_secs,
-                        cpu_secs,
-                    );
+                    let _ = setrlimit(Resource::RLIMIT_CPU, cpu_secs, cpu_secs);
                 }
                 // Address space (bytes)
                 let mem = (spec.memory_mb as u64) * 1024 * 1024;
                 if mem > 0 {
-                    let _ = setrlimit(
-                        Resource::RLIMIT_AS,
-                        mem,
-                        mem,
-                    );
+                    let _ = setrlimit(Resource::RLIMIT_AS, mem, mem);
                 }
                 // pids
                 if spec.pids > 0 {
-                    let _ = setrlimit(
-                        Resource::RLIMIT_NPROC,
-                        spec.pids as u64,
-                        spec.pids as u64,
-                    );
+                    let _ = setrlimit(Resource::RLIMIT_NPROC, spec.pids as u64, spec.pids as u64);
                 }
                 // Optional seccomp enable (best-effort) when feature/native and env toggled
                 #[cfg(all(target_os = "linux", feature = "native_sandbox"))]
