@@ -111,7 +111,7 @@ fn seccomp_minimal_allow() -> Result<(), String> {
 fn seccomp_minimal_allow() -> Result<(), String> { Err("seccomp not supported in this build".into()) }
 
 // OverlayFS(ro) + tmpfs:/tmp (best-effort). Returns guard on success.
-#[cfg(target_os = "linux")]
+#[cfg(all(target_os = "linux", feature = "linux_native"))]
 fn try_enable_overlay_ro() -> anyhow::Result<Option<OverlayGuard>> {
     use nix::{mount, sched::unshare, mount::MsFlags, unistd};
     use std::{fs, path::PathBuf};
@@ -199,12 +199,12 @@ fn try_enable_overlay_ro() -> anyhow::Result<Option<OverlayGuard>> {
     Ok(Some(OverlayGuard { _scratch: scratch }))
 }
 
-#[cfg(not(target_os = "linux"))]
+#[cfg(not(all(target_os = "linux", feature = "linux_native")))]
 fn try_enable_overlay_ro() -> anyhow::Result<Option<()>> { Ok(None) }
 
-#[cfg(target_os = "linux")]
+#[cfg(all(target_os = "linux", feature = "linux_native"))]
 struct OverlayGuard { _scratch: std::path::PathBuf }
-#[cfg(target_os = "linux")]
+#[cfg(all(target_os = "linux", feature = "linux_native"))]
 impl Drop for OverlayGuard { fn drop(&mut self) {} }
 
 // Optional Wasmtime wiring; compiled only when feature `wasm_exec` is enabled (CI).
@@ -268,13 +268,16 @@ async fn simple_exec_with_timeout(cmd: &str, stdin: &[u8], spec: &SandboxSpec) -
     command.current_dir("/tmp");
     command.env("HOME", "/tmp");
     command.env("TMPDIR", "/tmp");
-    #[cfg(unix)]
+    // Apply POSIX-style rlimits and optional Linux features only when the
+    // linux_native feature is enabled on Linux.
+    #[cfg(all(target_os = "linux", feature = "linux_native"))]
     {
         use nix::sys::resource::{setrlimit, Resource, Rlim};
+        use std::os::unix::process::CommandExt;
         let _ = unsafe {
             command.pre_exec(|| {
                 // Optional overlayfs(ro) + tmpfs:/tmp (best-effort)
-                #[cfg(target_os = "linux")]
+                #[cfg(all(target_os = "linux", feature = "linux_native"))]
                 {
                     if std::env::var("MAGICRUNE_OVERLAY_RO").ok().as_deref() == Some("1") {
                         match try_enable_overlay_ro() {
@@ -315,7 +318,7 @@ async fn simple_exec_with_timeout(cmd: &str, stdin: &[u8], spec: &SandboxSpec) -
             })
         };
         // Best-effort cgroups v2 (opt-in)
-        #[cfg(target_os = "linux")]
+        #[cfg(all(target_os = "linux", feature = "linux_native"))]
         if std::env::var("MAGICRUNE_CGROUPS").ok().as_deref() == Some("1") {
             match crate::sandbox::cgroups::try_enable_cgroups(spec.cpu_ms, spec.memory_mb, spec.pids) {
                 Ok(Some(path)) => eprintln!("[cgroups] enabled at {}", path),

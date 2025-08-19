@@ -942,7 +942,8 @@ fn main() {
                 if let Ok(schema_json) = serde_json::from_str::<serde_json::Value>(&schema_txt) {
                     if let Ok(compiled) = jsonschema::JSONSchema::options().compile(&schema_json) {
                         let out_val: serde_json::Value = serde_json::from_str(&out_json).unwrap();
-                        if let Err(errors) = compiled.validate(&out_val) {
+                        let validation = compiled.validate(&out_val);
+                        if let Err(errors) = validation {
                             for err in errors { eprintln!("output schema: {}", err); }
                             std::process::exit(2);
                         }

@@ -28,10 +28,9 @@ pub fn try_enable_cgroups(cpu_ms: u64, mem_mb: u64, pids: u64) -> Result<Option<
     }
     // join cgroup
     let mut f = fs::OpenOptions::new().write(true).open(path.join("cgroup.procs")).map_err(|e| format!("open cgroup.procs failed: {e}"))?;
-    writeln!(f, "{}", nix::unistd::getpid()).map_err(|e| format!("write cgroup.procs failed: {e}"))?;
+    writeln!(f, "{}", std::process::id()).map_err(|e| format!("write cgroup.procs failed: {e}"))?;
     Ok(Some(path.display().to_string()))
 }
 
 #[cfg(not(target_os = "linux"))]
 pub fn try_enable_cgroups(_cpu_ms: u64, _mem_mb: u64, _pids: u64) -> Result<Option<String>, String> { Ok(None) }
-
