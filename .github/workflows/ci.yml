@@ -71,12 +71,14 @@ jobs:
             --bundle sbom.spdx.json.bundle \
             --output-signature sbom.spdx.json.sig \
             sbom.spdx.json
-      - name: Verify SBOM signature (bundle)
+      - name: Verify SBOM signature (keyless, bundle + identity)
         env:
           COSIGN_EXPERIMENTAL: 1
         run: |
           cosign verify-blob \
             --bundle sbom.spdx.json.bundle \
+            --certificate-identity-regexp "https://github.com/${{ github.repository }}/.+" \
+            --certificate-oidc-issuer "https://token.actions.githubusercontent.com" \
             sbom.spdx.json
       - name: Upload artifacts
         uses: actions/upload-artifact@v4
