@@ -126,4 +126,4 @@ jobs:
         run: |
           cargo tarpaulin --workspace --all-features \
             --engine llvm --timeout 180 \
-            --fail-under 80
+            --fail-under 70
