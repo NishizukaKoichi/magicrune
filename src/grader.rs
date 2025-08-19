@@ -60,7 +60,7 @@ mod tests {
             ..Default::default()
         };
         let policy = PolicyDoc::default();
-        
+
         let outcome = grade(&req, &policy);
         assert_eq!(outcome.risk_score, 0);
         assert_eq!(outcome.verdict, "green");
@@ -74,7 +74,7 @@ mod tests {
             ..Default::default()
         };
         let policy = PolicyDoc::default();
-        
+
         let outcome = grade(&req, &policy);
         assert_eq!(outcome.risk_score, 40);
         assert_eq!(outcome.verdict, "yellow");
@@ -88,7 +88,7 @@ mod tests {
             ..Default::default()
         };
         let policy = PolicyDoc::default();
-        
+
         let outcome = grade(&req, &policy);
         assert_eq!(outcome.risk_score, 20);
         assert_eq!(outcome.verdict, "green");
@@ -102,7 +102,7 @@ mod tests {
             ..Default::default()
         };
         let policy = PolicyDoc::default();
-        
+
         let outcome = grade(&req, &policy);
         assert_eq!(outcome.risk_score, 60);
         assert_eq!(outcome.verdict, "yellow");
@@ -116,7 +116,7 @@ mod tests {
             ..Default::default()
         };
         let policy = PolicyDoc::default();
-        
+
         let outcome = grade(&req, &policy);
         assert_eq!(outcome.risk_score, 60);
         assert_eq!(outcome.verdict, "yellow");
@@ -129,7 +129,7 @@ mod tests {
             allow_fs: None,
             ..Default::default()
         };
-        
+
         let policy = PolicyDoc {
             version: 1,
             grading: Some(GradingCfg {
@@ -140,7 +140,7 @@ mod tests {
                 },
             }),
         };
-        
+
         let outcome = grade(&req, &policy);
         assert_eq!(outcome.risk_score, 40);
         assert_eq!(outcome.verdict, "yellow");
@@ -154,7 +154,7 @@ mod tests {
             ..Default::default()
         };
         let policy = PolicyDoc::default();
-        
+
         let outcome = grade(&req, &policy);
         assert_eq!(outcome.risk_score, 0);
         assert_eq!(outcome.verdict, "green");
@@ -168,7 +168,7 @@ mod tests {
             ..Default::default()
         };
         let policy = PolicyDoc::default();
-        
+
         let outcome = grade(&req, &policy);
         assert_eq!(outcome.risk_score, 0);
         assert_eq!(outcome.verdict, "green");

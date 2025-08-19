@@ -74,10 +74,10 @@ mod tests {
             allow_fs: Some(vec!["/tmp".to_string()]),
             seed: Some(42),
         };
-        
+
         let json = serde_json::to_string(&req).unwrap();
         let deserialized: SpellRequest = serde_json::from_str(&json).unwrap();
-        
+
         assert_eq!(deserialized.cmd, req.cmd);
         assert_eq!(deserialized.stdin, req.stdin);
         assert_eq!(deserialized.policy_id, req.policy_id);
@@ -96,10 +96,10 @@ mod tests {
             stdout_trunc: false,
             sbom_attestation: "attestation".to_string(),
         };
-        
+
         let json = serde_json::to_string(&result).unwrap();
         let deserialized: SpellResult = serde_json::from_str(&json).unwrap();
-        
+
         assert_eq!(deserialized.run_id, result.run_id);
         assert_eq!(deserialized.verdict, result.verdict);
         assert_eq!(deserialized.risk_score, result.risk_score);
@@ -133,10 +133,10 @@ mod tests {
                 red: "71-100".to_string(),
             },
         };
-        
+
         let json = serde_json::to_string(&cfg).unwrap();
         let deserialized: GradingCfg = serde_json::from_str(&json).unwrap();
-        
+
         assert_eq!(deserialized.thresholds.green, cfg.thresholds.green);
         assert_eq!(deserialized.thresholds.yellow, cfg.thresholds.yellow);
         assert_eq!(deserialized.thresholds.red, cfg.thresholds.red);
