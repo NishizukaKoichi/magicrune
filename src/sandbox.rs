@@ -41,6 +41,7 @@ pub fn detect_sandbox() -> SandboxKind {
     }
 
     // Fallback
+    #[allow(unreachable_code)]
     SandboxKind::Wasi
 }
 
@@ -112,10 +113,8 @@ fn seccomp_minimal_allow() -> Result<(), String> {
         eprintln!(
             "[seccomp] INFO: loosen enabled (added: getrandom, prlimit64, setrlimit, clone3)"
         );
-    } else {
-        if let Ok(sys) = ScmpSyscall::from_name("getrandom") {
-            list.push(sys);
-        }
+    } else if let Ok(sys) = ScmpSyscall::from_name("getrandom") {
+        list.push(sys);
     }
     for s in list.into_iter() {
         allow(&mut filter, s).map_err(|e| format!("{:?}", e))?;
@@ -333,18 +332,18 @@ async fn simple_exec_with_timeout(cmd: &str, stdin: &[u8], spec: &SandboxSpec) -
                     }
                 }
                 // CPU time limit (seconds)
-                let cpu_secs = (cpu_ms / 1000) as u64;
+                let cpu_secs = cpu_ms / 1000;
                 if cpu_secs > 0 {
                     let _ = setrlimit(Resource::RLIMIT_CPU, cpu_secs, cpu_secs);
                 }
                 // Address space (bytes)
-                let mem = (memory_mb as u64) * 1024 * 1024;
+                let mem = memory_mb * 1024 * 1024;
                 if mem > 0 {
                     let _ = setrlimit(Resource::RLIMIT_AS, mem, mem);
                 }
                 // pids
                 if pids > 0 {
-                    let _ = setrlimit(Resource::RLIMIT_NPROC, pids as u64, pids as u64);
+                    let _ = setrlimit(Resource::RLIMIT_NPROC, pids, pids);
                 }
                 // Optional seccomp enable (best-effort) when feature/native and env toggled
                 #[cfg(all(target_os = "linux", feature = "native_sandbox"))]
