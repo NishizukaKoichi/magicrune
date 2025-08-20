@@ -1,4 +1,4 @@
-use bootstrapped::sandbox::{detect_sandbox, SandboxKind};
+use magicrune::sandbox::{detect_sandbox, SandboxKind};
 use std::env;
 use std::fs;
 use std::io::{self, Write};
@@ -1173,7 +1173,7 @@ fn consume_entry(url: &str, subject: &str) -> anyhow::Result<()> {
     use std::collections::{HashSet, VecDeque};
     let rt = tokio::runtime::Runtime::new()?;
     rt.block_on(async move {
-        let nc = bootstrapped::jet::jet_impl::connect(&format!("nats://{}", url))
+        let nc = magicrune::jet::jet_impl::connect(&format!("nats://{}", url))
             .await
             .map_err(|e| anyhow::anyhow!(e.to_string()))?;
         fn env_u64(key: &str, default: u64) -> u64 {
@@ -1337,7 +1337,7 @@ fn consume_entry(url: &str, subject: &str) -> anyhow::Result<()> {
                         .as_ref()
                         .and_then(|h| h.get("Nats-Msg-Id"))
                         .map(|v| v.to_string())
-                        .unwrap_or_else(|| bootstrapped::jet::compute_msg_id(msg.payload.as_ref()));
+                        .unwrap_or_else(|| magicrune::jet::compute_msg_id(msg.payload.as_ref()));
                     if seen.contains(&id) {
                         count_dupe += 1;
                         let _ = msg.ack().await;
@@ -1604,7 +1604,7 @@ fn consume_entry(url: &str, subject: &str) -> anyhow::Result<()> {
                 .as_ref()
                 .and_then(|h| h.get("Nats-Msg-Id"))
                 .map(|v| v.to_string())
-                .unwrap_or_else(|| bootstrapped::jet::compute_msg_id(&msg.payload));
+                .unwrap_or_else(|| magicrune::jet::compute_msg_id(&msg.payload));
             if seen.contains(&id) {
                 continue;
             }
