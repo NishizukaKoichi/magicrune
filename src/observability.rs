@@ -1,15 +1,14 @@
 //! Observability module for MagicRune
 //! Provides structured logging, metrics, and distributed tracing
 
-use tracing::{info, warn, error, debug, instrument, Span};
-use tracing_subscriber::EnvFilter;
 use std::time::Instant;
+use tracing::{debug, error, info, instrument, warn, Span};
+use tracing_subscriber::EnvFilter;
 
 /// Initialize observability (logging + optional OpenTelemetry)
 pub fn init_observability() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     // Base env filter (e.g., RUST_LOG=info,magicrune=debug)
-    let env_filter = EnvFilter::try_from_default_env()
-        .unwrap_or_else(|_| EnvFilter::new("info"));
+    let env_filter = EnvFilter::try_from_default_env().unwrap_or_else(|_| EnvFilter::new("info"));
 
     // JSON or pretty logging based on env
     let is_json = std::env::var("MAGICRUNE_LOG_JSON").ok() == Some("1".to_string());
@@ -30,21 +29,20 @@ pub fn init_observability() -> Result<(), Box<dyn std::error::Error + Send + Syn
             .try_init()?;
     }
 
-    
     info!("MagicRune observability initialized");
     Ok(())
 }
 
-
 #[cfg(feature = "otel")]
-fn init_otel_tracer() -> Result<opentelemetry_sdk::trace::Tracer, Box<dyn std::error::Error + Send + Sync>> {
+fn init_otel_tracer(
+) -> Result<opentelemetry_sdk::trace::Tracer, Box<dyn std::error::Error + Send + Sync>> {
     use opentelemetry::{global, KeyValue};
-    use opentelemetry_sdk::{Resource, runtime};
     use opentelemetry_otlp::WithExportConfig;
+    use opentelemetry_sdk::{runtime, Resource};
 
-    let service_name = std::env::var("OTEL_SERVICE_NAME")
-        .unwrap_or_else(|_| "magicrune".to_string());
-    
+    let service_name =
+        std::env::var("OTEL_SERVICE_NAME").unwrap_or_else(|_| "magicrune".to_string());
+
     let resource = Resource::new(vec![
         KeyValue::new("service.name", service_name),
         KeyValue::new("service.version", env!("CARGO_PKG_VERSION")),
@@ -55,12 +53,9 @@ fn init_otel_tracer() -> Result<opentelemetry_sdk::trace::Tracer, Box<dyn std::e
         .with_exporter(
             opentelemetry_otlp::new_exporter()
                 .tonic()
-                .with_endpoint(std::env::var("OTEL_EXPORTER_OTLP_ENDPOINT")?)
+                .with_endpoint(std::env::var("OTEL_EXPORTER_OTLP_ENDPOINT")?),
         )
-        .with_trace_config(
-            opentelemetry_sdk::trace::config()
-                .with_resource(resource)
-        )
+        .with_trace_config(opentelemetry_sdk::trace::config().with_resource(resource))
         .install_batch(runtime::Tokio)?;
 
     Ok(tracer)
@@ -97,7 +92,7 @@ impl ExecutionContext {
     #[instrument(skip(self))]
     pub fn record_completion(&self, verdict: &str, risk_score: u32, exit_code: i32) {
         let duration_ms = self.start_time.elapsed().as_millis() as u64;
-        
+
         info!(
             run_id = %self.run_id,
             verdict = %verdict,

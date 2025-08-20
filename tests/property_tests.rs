@@ -50,25 +50,23 @@ fn arb_spell_request() -> impl Strategy<Value = serde_json::Value> {
             0..3,
         ),
     )
-        .prop_map(
-            |(cmd, stdin, timeout_sec, allow_net, allow_fs, files)| {
-                serde_json::json!({
-                    "cmd": cmd,
-                    "stdin": stdin,
-                    "env": {},
-                    "files": files.into_iter().map(|(path, content_b64)| {
-                        serde_json::json!({
-                            "path": path,
-                            "content_b64": content_b64
-                        })
-                    }).collect::<Vec<_>>(),
-                    "policy_id": "default",
-                    "timeout_sec": timeout_sec,
-                    "allow_net": allow_net,
-                    "allow_fs": allow_fs
-                })
-            },
-        )
+        .prop_map(|(cmd, stdin, timeout_sec, allow_net, allow_fs, files)| {
+            serde_json::json!({
+                "cmd": cmd,
+                "stdin": stdin,
+                "env": {},
+                "files": files.into_iter().map(|(path, content_b64)| {
+                    serde_json::json!({
+                        "path": path,
+                        "content_b64": content_b64
+                    })
+                }).collect::<Vec<_>>(),
+                "policy_id": "default",
+                "timeout_sec": timeout_sec,
+                "allow_net": allow_net,
+                "allow_fs": allow_fs
+            })
+        })
 }
 
 proptest! {
@@ -240,7 +238,7 @@ proptest! {
 #[cfg(test)]
 mod uuid {
     pub struct Uuid(u128);
-    
+
     impl Uuid {
         pub fn new_v4() -> Self {
             use std::time::{SystemTime, UNIX_EPOCH};
@@ -251,7 +249,7 @@ mod uuid {
             Self(nanos ^ (std::process::id() as u128))
         }
     }
-    
+
     impl std::fmt::Display for Uuid {
         fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
             write!(f, "{:032x}", self.0)

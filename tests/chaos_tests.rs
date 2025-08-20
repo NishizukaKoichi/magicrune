@@ -34,8 +34,11 @@ fn chaos_timeout_enforcement() {
         .expect("Failed to execute");
 
     // Should fail due to policy violation
-    assert!(!output.status.success(), "Should fail due to timeout policy violation");
-    
+    assert!(
+        !output.status.success(),
+        "Should fail due to timeout policy violation"
+    );
+
     let stderr = String::from_utf8_lossy(&output.stderr);
     assert!(
         stderr.contains("timeout_sec") && stderr.contains("exceeds wall_sec limit"),
@@ -69,13 +72,16 @@ fn chaos_large_output_truncation() {
         .expect("Failed to execute");
 
     // Should complete successfully
-    assert!(status.success() || status.code().unwrap_or(99) != 99, "Should handle large output");
+    assert!(
+        status.success() || status.code().unwrap_or(99) != 99,
+        "Should handle large output"
+    );
 
     // Result should exist and be valid JSON
     if fs::metadata(out_path).is_ok() {
         let result_str = fs::read_to_string(out_path).expect("Should read result");
-        let _result: serde_json::Value = serde_json::from_str(&result_str)
-            .expect("Result should be valid JSON");
+        let _result: serde_json::Value =
+            serde_json::from_str(&result_str).expect("Result should be valid JSON");
     }
 }
 
@@ -151,7 +157,7 @@ fn chaos_signal_handling() {
     // Try to kill it
     let killed = Arc::new(AtomicBool::new(false));
     let killed_clone = killed.clone();
-    
+
     thread::spawn(move || {
         thread::sleep(Duration::from_secs(1));
         if let Err(e) = child.kill() {
@@ -172,7 +178,7 @@ fn chaos_signal_handling() {
 fn chaos_invalid_json_handling() {
     // Test handling of malformed JSON
     let _ = fs::create_dir_all("target/tmp");
-    
+
     // Write invalid JSON
     fs::write("target/tmp/chaos_invalid.json", "{ invalid json }").unwrap();
 
@@ -184,7 +190,7 @@ fn chaos_invalid_json_handling() {
 
     // Should fail with parse error
     assert!(!output.status.success(), "Should fail on invalid JSON");
-    
+
     let stderr = String::from_utf8_lossy(&output.stderr);
     assert!(
         stderr.contains("Invalid JSON") || stderr.contains("expected"),
@@ -202,7 +208,11 @@ fn chaos_missing_required_fields() {
 
     let _ = fs::create_dir_all("target/tmp");
     let req_path = "target/tmp/chaos_incomplete.json";
-    fs::write(req_path, serde_json::to_string_pretty(&incomplete_request).unwrap()).unwrap();
+    fs::write(
+        req_path,
+        serde_json::to_string_pretty(&incomplete_request).unwrap(),
+    )
+    .unwrap();
 
     let output = Command::new("cargo")
         .args(["run", "--", "exec", "-f", req_path, "--strict"])
@@ -211,7 +221,10 @@ fn chaos_missing_required_fields() {
         .expect("Failed to execute");
 
     // Should fail validation
-    assert!(!output.status.success(), "Should fail on incomplete request");
+    assert!(
+        !output.status.success(),
+        "Should fail on incomplete request"
+    );
 }
 
 #[test]
@@ -239,7 +252,10 @@ fn chaos_resource_exhaustion() {
         .expect("Failed to execute");
 
     // Should complete (either success or resource limit)
-    assert!(status.code().is_some(), "Should not crash on resource exhaustion");
+    assert!(
+        status.code().is_some(),
+        "Should not crash on resource exhaustion"
+    );
 }
 
 #[test]
@@ -267,5 +283,8 @@ fn chaos_rapid_file_operations() {
         .expect("Failed to execute");
 
     // Should handle rapid file operations
-    assert!(status.code().is_some(), "Should handle rapid file operations");
+    assert!(
+        status.code().is_some(),
+        "Should handle rapid file operations"
+    );
 }

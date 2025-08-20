@@ -1,5 +1,5 @@
-use magicrune::sandbox::{detect_sandbox, SandboxKind};
 use magicrune::observability::{init_observability, shutdown_observability, ExecutionContext};
+use magicrune::sandbox::{detect_sandbox, SandboxKind};
 use std::env;
 use std::fs;
 use std::io::{self, Write};
@@ -1085,7 +1085,7 @@ fn main() {
     };
 
     // Record completion metrics
-    ctx.record_completion(&verdict, risk_score, actual_exit.unwrap_or(exit_code));
+    ctx.record_completion(verdict, risk_score, actual_exit.unwrap_or(exit_code));
 
     // If runtime timeout was hit, force red verdict and exit=20
     let mut out_json = serde_json::to_string_pretty(&result).expect("serialize");
