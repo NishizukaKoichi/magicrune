@@ -1,8 +1,8 @@
 #[cfg(feature = "jet")]
 mod app {
     use base64::Engine;
-    use magicrune::jet::{compute_msg_id, jet_impl};
     use futures_util::StreamExt;
+    use magicrune::jet::{compute_msg_id, jet_impl};
     use serde::{Deserialize, Serialize};
     use std::collections::{HashSet, VecDeque};
     use std::path::Path;

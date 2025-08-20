@@ -49,13 +49,13 @@ fn bench_grade_high_risk(c: &mut Criterion) {
 
 fn bench_grade_with_custom_policy(c: &mut Criterion) {
     use magicrune::schema::{GradingCfg, GradingThresholds};
-    
+
     let req = SpellRequest {
         allow_net: Some(vec!["example.com".to_string()]),
         allow_fs: Some(vec!["/home".to_string()]),
         ..Default::default()
     };
-    
+
     let policy = PolicyDoc {
         version: 1,
         grading: Some(GradingCfg {

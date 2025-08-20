@@ -10,7 +10,7 @@ mod tests {
         #[cfg(not(target_arch = "wasm32"))]
         {
             // Test passes on non-WASM architectures
-            assert!(true);
+            // No assertion needed - test succeeds by not failing
         }
     }
 
@@ -26,14 +26,14 @@ mod tests {
         #[cfg(not(all(target_arch = "wasm32", feature = "std")))]
         {
             // Normal execution path
-            assert!(true);
+            // No assertion needed - test succeeds by not failing
         }
     }
 
     #[test]
     fn test_forbidden_api_detection() {
         // This test documents what APIs are forbidden
-        let forbidden_apis = vec![
+        let forbidden_apis = [
             "std::fs",
             "std::net",
             "std::thread",
