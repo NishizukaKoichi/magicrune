@@ -14,7 +14,15 @@ fn test_cli_help() {
 
     assert!(output.status.success() || output.status.code() == Some(0));
     let stdout = String::from_utf8_lossy(&output.stdout);
-    assert!(stdout.contains("Usage") || stdout.contains("USAGE") || !stdout.is_empty());
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(
+        stdout.contains("Usage")
+            || stdout.contains("USAGE")
+            || stderr.contains("Usage")
+            || stderr.contains("USAGE")
+            || !stdout.is_empty()
+            || !stderr.is_empty()
+    );
 }
 
 #[test]

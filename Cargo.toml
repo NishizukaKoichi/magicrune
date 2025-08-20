@@ -10,7 +10,7 @@ repository = "https://github.com/NishizukaKoichi/MagicRune"
 
 [[bin]]
 name = "magicrune"
-path = "src/main.rs"
+path = "src/bin/magicrune.rs"
 
 [features]
 default = ["std"]
@@ -20,6 +20,7 @@ jet = ["dep:async-nats"]
 wasm_exec = ["dep:wasmtime", "dep:wasmtime-wasi"]
 linux_native = ["dep:nix"]
 native_sandbox = ["linux_native", "dep:libseccomp"]
+otel = ["dep:opentelemetry", "dep:opentelemetry_sdk", "dep:opentelemetry-otlp", "dep:tracing-opentelemetry"]
 
 [dependencies]
 thiserror = "2.0"
@@ -38,6 +39,13 @@ libseccomp = { version = "0.3", optional = true }
 anyhow = "1.0"
 futures-util = { version = "0.3", default-features = false, features = ["std"] }
 url = "2.5"
+# Observability
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter", "json"] }
+opentelemetry = { version = "0.26", optional = true }
+opentelemetry_sdk = { version = "0.26", optional = true, features = ["rt-tokio"] }
+opentelemetry-otlp = { version = "0.26", optional = true }
+tracing-opentelemetry = { version = "0.26", optional = true }
 
 [target.'cfg(target_arch = "wasm32")'.dependencies]
 wasm-bindgen = "0.2"
@@ -49,6 +57,7 @@ features = ["rt-multi-thread","macros","time","process"]
 
 [dev-dependencies]
 criterion = { version = "0.5", features = ["async_tokio"] }
+proptest = "1.0"
 
 [[bench]]
 name = "sandbox_bench"

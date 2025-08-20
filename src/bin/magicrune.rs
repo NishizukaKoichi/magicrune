@@ -1,4 +1,5 @@
 use magicrune::sandbox::{detect_sandbox, SandboxKind};
+use magicrune::observability::{init_observability, shutdown_observability, ExecutionContext};
 use std::env;
 use std::fs;
 use std::io::{self, Write};
@@ -353,13 +354,16 @@ fn load_net_allow_from_policy(path: &str) -> Vec<String> {
                     }
                     if line.starts_with("- ") {
                         let item = line.trim_start_matches("- ").trim();
-                        // Support both:
+                        // Support multiple forms:
                         // - host: "example.com:443" (keyed form)
+                        // - addr: "example.com:443" (keyed form)
                         // - "example.com:443" (simple string form)
-                        if let Some((_, val)) = item.split_once(": ") {
-                            let v = val.trim().trim_matches('"');
-                            if !v.is_empty() {
-                                out.push(v.to_string());
+                        if let Some((key, val)) = item.split_once(": ") {
+                            if key == "host" || key == "addr" {
+                                let v = val.trim().trim_matches('"');
+                                if !v.is_empty() {
+                                    out.push(v.to_string());
+                                }
                             }
                         } else {
                             let v = item.trim().trim_matches('"');
@@ -626,14 +630,21 @@ fn decide_verdict_from_thresholds(score: u32, th: &Thresholds) -> &'static str {
 }
 
 fn main() {
+    // Initialize observability first
+    if let Err(e) = init_observability() {
+        eprintln!("Failed to initialize observability: {}", e);
+    }
+
     let args = env::args().skip(1).collect::<Vec<String>>();
     if args.is_empty() || args[0] == "-h" || args[0] == "--help" {
         print_usage();
+        shutdown_observability();
         std::process::exit(0);
     }
 
     if args[0] == "--version" {
         println!("magicrune 0.1.0");
+        shutdown_observability();
         std::process::exit(0);
     }
 
@@ -869,6 +880,11 @@ fn main() {
     all.extend_from_slice(&seed_buf);
     let run_id = format!("r_{}", sha256_hex(&all));
 
+    // Create execution context for observability
+    let ctx = ExecutionContext::new(run_id.clone(), req.policy_id.clone());
+    let _span = ctx.span();
+    let _enter = _span.enter();
+
     // Minimal static grading (policy thresholds aware):
     // - if cmd suggests network and allow_net empty -> +40 (yellow)
     // - if cmd contains 'ssh' -> +30
@@ -899,6 +915,8 @@ fn main() {
         for (k, _v) in &req.env {
             if !env_allow.iter().any(|p| pat_matches(k, p)) {
                 eprintln!("policy: env not allowed {}", k);
+                ctx.record_policy_violation("env_not_allowed", k);
+                shutdown_observability();
                 std::process::exit(3);
             }
         }
@@ -1057,7 +1075,7 @@ fn main() {
     }
 
     let result = SpellResult {
-        run_id,
+        run_id: run_id.clone(),
         verdict: verdict.to_string(),
         risk_score,
         exit_code: actual_exit.unwrap_or(exit_code),
@@ -1065,6 +1083,9 @@ fn main() {
         stdout_trunc: false,
         sbom_attestation: None,
     };
+
+    // Record completion metrics
+    ctx.record_completion(&verdict, risk_score, actual_exit.unwrap_or(exit_code));
 
     // If runtime timeout was hit, force red verdict and exit=20
     let mut out_json = serde_json::to_string_pretty(&result).expect("serialize");
@@ -1164,6 +1185,7 @@ fn main() {
         let _ = fs::write(qdir.join("stderr.txt"), &captured_stderr);
     }
 
+    shutdown_observability();
     std::process::exit(final_exit);
 }
 
