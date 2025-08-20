@@ -29,6 +29,13 @@ pub fn init_observability() -> Result<(), Box<dyn std::error::Error + Send + Syn
             .try_init()?;
     }
 
+    // Initialize OpenTelemetry if enabled and endpoint is configured
+    #[cfg(feature = "otel")]
+    if std::env::var("OTEL_EXPORTER_OTLP_ENDPOINT").is_ok() {
+        let _tracer_provider = init_otel_tracer()?;
+        info!("OpenTelemetry tracer initialized");
+    }
+
     info!("MagicRune observability initialized");
     Ok(())
 }
