@@ -1,15 +1,15 @@
 [package]
-name = "bootstrapped"
+name = "magicrune"
 version = "0.1.0"
 edition = "2021"
 rust-version = "1.82"
-default-run = "bootstrapped"
+default-run = "magicrune"
 license = "MIT OR Apache-2.0"
-description = "A bootstrapped Rust/WASM edge application"
-repository = "https://github.com/NishizukaKoichi/bootstrapped"
+description = "A secure sandbox execution environment with risk assessment"
+repository = "https://github.com/NishizukaKoichi/MagicRune"
 
 [[bin]]
-name = "bootstrapped"
+name = "magicrune"
 path = "src/main.rs"
 
 [features]
@@ -48,3 +48,19 @@ version = "1.47"
 features = ["rt-multi-thread","macros","time","process"]
 
 [dev-dependencies]
+criterion = { version = "0.5", features = ["async_tokio"] }
+
+[[bench]]
+name = "sandbox_bench"
+harness = false
+path = "benchmarks/sandbox_bench.rs"
+
+[[bench]]
+name = "grader_bench"
+harness = false
+path = "benchmarks/grader_bench.rs"
+
+[[bench]]
+name = "compute_msg_id_bench"
+harness = false
+path = "benchmarks/compute_msg_id_bench.rs"

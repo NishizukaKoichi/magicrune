@@ -1,7 +1,7 @@
 #[cfg(feature = "jet")]
 mod app {
     use base64::Engine;
-    use bootstrapped::jet::{compute_msg_id, jet_impl};
+    use magicrune::jet::{compute_msg_id, jet_impl};
     use futures_util::StreamExt;
     use serde::{Deserialize, Serialize};
     use std::collections::{HashSet, VecDeque};

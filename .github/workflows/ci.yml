@@ -126,4 +126,4 @@ jobs:
         run: |
           cargo tarpaulin --lib --all-features \
             --engine llvm --timeout 180 \
-            --fail-under 70 || echo "Coverage check failed, but continuing"
+            --fail-under 80 || echo "Coverage check failed, but continuing"

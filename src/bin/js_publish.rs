@@ -1,7 +1,6 @@
 #[cfg(feature = "jet")]
 mod app {
-    use bootstrapped::jet::{compute_msg_id, jet_impl};
-    use futures_util::StreamExt;
+    use magicrune::jet::{compute_msg_id, jet_impl};
     use serde_json::Value;
     use std::str::FromStr as _;
 

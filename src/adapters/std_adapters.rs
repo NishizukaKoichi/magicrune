@@ -60,3 +60,98 @@ impl EnvironmentPort for StdEnvAdapter {
         std::env::args().collect()
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_std_time_adapter_now_millis() {
+        let adapter = StdTimeAdapter;
+        let millis1 = adapter.now_millis();
+        std::thread::sleep(std::time::Duration::from_millis(10));
+        let millis2 = adapter.now_millis();
+
+        assert!(millis2 > millis1);
+        assert!(millis1 > 0);
+    }
+
+    #[test]
+    fn test_std_time_adapter_now_secs() {
+        let adapter = StdTimeAdapter;
+        let secs = adapter.now_secs();
+
+        // Should be a reasonable timestamp (after year 2020)
+        assert!(secs > 1577836800); // Jan 1, 2020
+    }
+
+    #[tokio::test]
+    async fn test_std_time_adapter_sleep() {
+        let adapter = StdTimeAdapter;
+        let start = std::time::Instant::now();
+        adapter.sleep(Duration::from_millis(50)).await;
+        let elapsed = start.elapsed();
+
+        // Should have slept for at least 50ms
+        assert!(elapsed >= Duration::from_millis(50));
+    }
+
+    #[test]
+    fn test_std_env_adapter_var_operations() {
+        let adapter = StdEnvAdapter;
+        let test_key = "TEST_MAGICRUNE_VAR";
+        let test_value = "test_value_123";
+
+        // Test set_var
+        adapter.set_var(test_key, test_value);
+
+        // Test get_var
+        let result = adapter.get_var(test_key);
+        assert!(result.is_ok());
+        assert_eq!(result.unwrap(), test_value);
+
+        // Test remove_var
+        adapter.remove_var(test_key);
+        let result = adapter.get_var(test_key);
+        assert!(result.is_err());
+        match result.unwrap_err() {
+            EnvError::NotFound(key) => assert_eq!(key, test_key),
+            _ => panic!("Expected NotFound error"),
+        }
+    }
+
+    #[test]
+    fn test_std_env_adapter_current_dir() {
+        let adapter = StdEnvAdapter;
+        let result = adapter.current_dir();
+
+        assert!(result.is_ok());
+        let dir = result.unwrap();
+        assert!(!dir.is_empty());
+        // Should be an absolute path
+        assert!(dir.starts_with('/') || dir.contains(':'));
+    }
+
+    #[test]
+    fn test_std_env_adapter_args() {
+        let adapter = StdEnvAdapter;
+        let args = adapter.args();
+
+        // Should at least contain the program name
+        assert!(!args.is_empty());
+    }
+
+    #[test]
+    fn test_std_env_adapter_get_nonexistent_var() {
+        let adapter = StdEnvAdapter;
+        let result = adapter.get_var("DEFINITELY_NONEXISTENT_VAR_MAGICRUNE_TEST");
+
+        assert!(result.is_err());
+        match result.unwrap_err() {
+            EnvError::NotFound(key) => {
+                assert_eq!(key, "DEFINITELY_NONEXISTENT_VAR_MAGICRUNE_TEST")
+            }
+            _ => panic!("Expected NotFound error"),
+        }
+    }
+}
