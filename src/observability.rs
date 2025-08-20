@@ -35,10 +35,10 @@ pub fn init_observability() -> Result<(), Box<dyn std::error::Error + Send + Syn
 
 #[cfg(feature = "otel")]
 fn init_otel_tracer(
-) -> Result<opentelemetry_sdk::trace::Tracer, Box<dyn std::error::Error + Send + Sync>> {
-    use opentelemetry::{global, KeyValue};
+) -> Result<opentelemetry_sdk::trace::TracerProvider, Box<dyn std::error::Error + Send + Sync>> {
+    use opentelemetry::KeyValue;
     use opentelemetry_otlp::WithExportConfig;
-    use opentelemetry_sdk::{runtime, Resource};
+    use opentelemetry_sdk::{runtime, trace::Config, Resource};
 
     let service_name =
         std::env::var("OTEL_SERVICE_NAME").unwrap_or_else(|_| "magicrune".to_string());
@@ -48,17 +48,17 @@ fn init_otel_tracer(
         KeyValue::new("service.version", env!("CARGO_PKG_VERSION")),
     ]);
 
-    let tracer = opentelemetry_otlp::new_pipeline()
+    let tracer_provider = opentelemetry_otlp::new_pipeline()
         .tracing()
         .with_exporter(
             opentelemetry_otlp::new_exporter()
                 .tonic()
                 .with_endpoint(std::env::var("OTEL_EXPORTER_OTLP_ENDPOINT")?),
         )
-        .with_trace_config(opentelemetry_sdk::trace::config().with_resource(resource))
+        .with_trace_config(Config::default().with_resource(resource))
         .install_batch(runtime::Tokio)?;
 
-    Ok(tracer)
+    Ok(tracer_provider)
 }
 
 /// Structured execution context with tracing
